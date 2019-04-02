@@ -50,7 +50,10 @@ class ComplexFeaturizer(object):
     features = []
     failures = []
     for ind, result in enumerate(results):
-      new_features = result.get()
+      try:
+        new_features = result.get()
+      except:
+        new_features = None
       # Handle loading failures which return None
       if new_features is not None:
         features.append(new_features)
