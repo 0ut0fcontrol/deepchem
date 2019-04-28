@@ -141,6 +141,7 @@ def load_pdbbind_grid(split="random",
 def load_pdbbind(reload=True,
                  data_dir=None,
                  subset="core",
+                 shard_size=None,
                  load_binding_pocket=False,
                  featurizer="grid",
                  split="random",
@@ -159,6 +160,9 @@ def load_pdbbind(reload=True,
     Load binding pocket or full protein.
   subset: Str
     Specifies which subset of PDBBind, only "core" or "refined" for now.
+  shard_size: Int, optinal
+    Specifies size of shards when load general_PL subset considering its large scale.
+    Default values are None for core/refined subset and 4096 for general_PL subset.
   featurizer: Str
     Either "grid" or "atomic" for grid and atomic featurizations.
   split: Str
@@ -193,12 +197,13 @@ def load_pdbbind(reload=True,
   if save_timestamp:
     save_folder = "%s-%s-%s" % (save_folder,
                                 time.strftime("%Y%m%d", time.localtime()),
-                                re.search("\.(.*)", str(time.time())).group(1))
+                                re.search(r"\.(.*)", str(time.time())).group(1))
 
   if reload:
     if not os.path.exists(save_folder):
       raise IOError("Cannot find saved dataset from %s!" % save_folder)
-    print("\nLoading featurized and splitted dataset from:\n%s\n" % save_folder)
+    print(
+        "\nLoading featurized and splitted dataset from:\n%s\n" % save_folder)
     loaded, all_dataset, transformers = deepchem.utils.save.load_dataset_from_disk(
         save_folder)
     if loaded:
@@ -228,6 +233,8 @@ def load_pdbbind(reload=True,
     index_labels_file = os.path.join(data_folder, "INDEX_core_data.2013")
   elif subset == "refined":
     index_labels_file = os.path.join(data_folder, "INDEX_refined_data.2015")
+  elif subset == "general_PL":
+    index_labels_file = os.path.join(data_folder, "INDEX_general_PL_data.2015")
   else:
     raise ValueError("Other subsets not supported")
 
@@ -296,20 +303,56 @@ def load_pdbbind(reload=True,
   else:
     raise ValueError("Featurizer not supported")
 
-  print("\nFeaturizing Complexes for \"%s\" ...\n" % data_folder)
+  if subset == "general_PL":
+    if shard_size is None:
+      shard_size = 4096
+
+  def get_shards(inputs, shard_size):
+    if shard_size is None:
+      yield inputs
+    else:
+      assert isinstance(shard_size, int) and 0 < shard_size <= len(inputs)
+      print("About to start loading files.\n")
+      for shard_ind in range(len(inputs) // shard_size + 1):
+        if (shard_ind + 1) * shard_size < len(inputs):
+          print("Loading shard %d of size %s." %
+                (shard_ind + 1, str(shard_size)))
+          yield inputs[shard_ind * shard_size:(shard_ind + 1) * shard_size]
+      else:
+        print("\nLoading shard %d of size %s." %
+              (shard_ind + 1, str(len(inputs) % shard_size)))
+        yield inputs[shard_ind * shard_size:len(inputs)]
+
+  def shard_generator(inputs, shard_size):
+    for shard_num, shard in enumerate(get_shards(inputs, shard_size)):
+      time1 = time.time()
+      ligand_files, protein_files, labels, pdbs = zip(*shard)
+      features, failures = featurizer.featurize_complexes(
+          ligand_files, protein_files)
+      labels = np.delete(labels, failures)
+      labels = labels.reshape((len(labels), 1))
+      weight = np.ones_like(labels)
+      ids = np.delete(pdbs, failures)
+      assert len(features) == len(labels) == len(weight) == len(ids)
+      time2 = time.time()
+      print("[%s] Featurizing shard %d took %0.3f s\n" % (time.strftime(
+          "%Y-%m-%d %H:%M:%S", time.localtime()), shard_num, time2 - time1))
+      yield features, labels, weight, ids
+
+  print(
+      "\n[%s] Featurizing and constructing dataset without failing featurization for"
+      % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+      "\"%s\"\n" % data_folder)
   feat_t1 = time.time()
-  features, failures = featurizer.featurize_complexes(ligand_files,
-                                                      protein_files)
+  zipped = list(zip(ligand_files, protein_files, labels, pdbs))
+  dataset = deepchem.data.DiskDataset.create_dataset(
+      shard_generator(zipped, shard_size=shard_size),
+      data_dir=save_folder,
+      tasks=pdbbind_tasks,
+      verbose=True)
   feat_t2 = time.time()
-  print("\nFeaturization finished, took %0.3f s." % (feat_t2 - feat_t1))
-
-  # Delete labels and ids for failing elements
-  labels = np.delete(labels, failures)
-  labels = labels.reshape((len(labels), 1))
-  ids = np.delete(pdbs, failures)
-
-  print("\nConstruct dataset excluding failing featurization elements...")
-  dataset = deepchem.data.DiskDataset.from_numpy(features, y=labels, ids=ids)
+  print("\n[%s] Featurization and construction finished, %0.3f s passed.\n" % (
+      time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), feat_t2 - feat_t1))
 
   # No transformations of data
   transformers = []
