@@ -186,18 +186,20 @@ def load_pdbbind(reload=True,
   data_folder = os.path.join(data_dir, "pdbbind", "v2015")
 
   if save_dir == None:
-    save_dir = os.path.join(deepchem_dir, "from-pdbbind")
+    save_dir = deepchem_dir
   if load_binding_pocket:
     save_folder = os.path.join(
-        save_dir, "protein_pocket-%s-%s-%s" % (subset, featurizer, split))
+        save_dir, "from-pdbbind",
+        "protein_pocket-%s-%s-%s" % (subset, featurizer, split))
   else:
     save_folder = os.path.join(
-        save_dir, "full_protein-%s-%s-%s" % (subset, featurizer, split))
+        save_dir, "from-pdbbind",
+        "full_protein-%s-%s-%s" % (subset, featurizer, split))
 
   if save_timestamp:
-    save_folder = "%s-%s-%s" % (save_folder,
-                                time.strftime("%Y%m%d", time.localtime()),
-                                re.search(r"\.(.*)", str(time.time())).group(1))
+    save_folder = "%s-%s-%s" % (
+        save_folder, time.strftime("%Y%m%d", time.localtime()),
+        re.search(r"\.(.*)", str(time.time())).group(1))
 
   if reload:
     if not os.path.exists(save_folder):
@@ -209,8 +211,9 @@ def load_pdbbind(reload=True,
     if loaded:
       return pdbbind_tasks, all_dataset, transformers
     else:
-      raise IOError("Failed to load featurized and splitted dataset from:\n%s\n"
-                    % save_folder)
+      raise IOError(
+          "Failed to load featurized and splitted dataset from:\n%s\n" %
+          save_folder)
 
   dataset_file = os.path.join(data_dir, "pdbbind_v2015.tar.gz")
   if not os.path.exists(dataset_file):
@@ -315,8 +318,8 @@ def load_pdbbind(reload=True,
       print("About to start loading files.\n")
       for shard_ind in range(len(inputs) // shard_size + 1):
         if (shard_ind + 1) * shard_size < len(inputs):
-          print("Loading shard %d of size %s." %
-                (shard_ind + 1, str(shard_size)))
+          print("Loading shard %d of size %s." % (shard_ind + 1,
+                                                  str(shard_size)))
           yield inputs[shard_ind * shard_size:(shard_ind + 1) * shard_size]
       else:
         print("\nLoading shard %d of size %s." %
@@ -369,7 +372,8 @@ def load_pdbbind(reload=True,
       'random': deepchem.splits.RandomSplitter(),
   }
   splitter = splitters[split]
-  train, valid, test = splitter.train_valid_test_split(dataset, seed=split_seed)
+  train, valid, test = splitter.train_valid_test_split(
+      dataset, seed=split_seed)
 
   all_dataset = (train, valid, test)
   print("\nSaving dataset to \"%s\" ..." % save_folder)
