@@ -140,6 +140,7 @@ def load_pdbbind_grid(split="random",
 
 def load_pdbbind(reload=True,
                  data_dir=None,
+                 version="2015",
                  subset="core",
                  shard_size=None,
                  load_binding_pocket=False,
@@ -183,7 +184,7 @@ def load_pdbbind(reload=True,
 
   if data_dir == None:
     data_dir = deepchem_dir
-  data_folder = os.path.join(data_dir, "pdbbind", "v2015")
+  data_folder = os.path.join(data_dir, "pdbbind", "v" + version)
 
   if save_dir == None:
     save_dir = deepchem_dir
@@ -232,14 +233,31 @@ def load_pdbbind(reload=True,
   print("\nRaw dataset:\n%s" % data_folder)
   print("\nFeaturized and splitted dataset:\n%s" % save_folder)
 
-  if subset == "core":
-    index_labels_file = os.path.join(data_folder, "INDEX_core_data.2013")
-  elif subset == "refined":
-    index_labels_file = os.path.join(data_folder, "INDEX_refined_data.2015")
-  elif subset == "general_PL":
-    index_labels_file = os.path.join(data_folder, "INDEX_general_PL_data.2015")
+  if version == "2015":
+    if subset == "core":
+      index_labels_file = os.path.join(data_folder, "index",
+                                       "INDEX_core_data.2013")
+    elif subset == "refined":
+      index_labels_file = os.path.join(data_folder, "index",
+                                       "INDEX_refined_data.2015")
+    elif subset == "general_PL":
+      index_labels_file = os.path.join(data_folder, "index",
+                                       "INDEX_general_PL_data.2015")
+    else:
+      raise ValueError("Other subsets not supported for version %s" % version)
+
+  elif version == "2018":
+    if subset == "refined":
+      index_labels_file = os.path.join(data_folder, "index",
+                                       "INDEX_refined_data.2018")
+    elif subset == "general_PL":
+      index_labels_file = os.path.join(data_folder, "index",
+                                       "INDEX_general_PL_data.2018")
+    else:
+      raise ValueError("Other subsets not supported for version %s" % version)
+
   else:
-    raise ValueError("Other subsets not supported")
+    raise ValueError("Other versions not supported")
 
   # Extract locations of data
   with open(index_labels_file, "r") as g:
