@@ -18,6 +18,8 @@ import tarfile
 from deepchem.feat import rdkit_grid_featurizer as rgf
 from deepchem.feat.atomic_coordinates import ComplexNeighborListFragmentAtomicCoordinates
 from deepchem.feat.graph_features import AtomicConvFeaturizer
+from deepchem.splits import FingerprintSplitter
+from deepchem.splits import Splitter
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +140,260 @@ def load_pdbbind_grid(split="random",
     return tasks, (train, valid, test), transformers
 
 
+class FingerprintSplitter4Pdbbind(FingerprintSplitter):
+  """
+    Class for doing data splits based on the fingerprints of small molecules
+    O(N**2) algorithm
+    load small moleculer with SDF format
+  """
+
+  def __init__(self, pdbbind_data_folder, verbose=False):
+    """Provide input information for splits."""
+    self.pdbbind_data_folder = pdbbind_data_folder
+    self.verbose = verbose
+    super(FingerprintSplitter4Pdbbind, self).__init__(verbose)
+
+  def split(self,
+            dataset,
+            seed=None,
+            frac_train=.8,
+            frac_valid=.1,
+            frac_test=.1,
+            log_every_n=1000):
+    """
+        Splits internal compounds into train/validation/test by fingerprint.
+    """
+    np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
+    data_len = len(dataset)
+    mols, fingerprints = [], []
+    train_inds, valid_inds, test_inds = [], [], []
+    from rdkit import Chem
+    from rdkit.Chem.Fingerprints import FingerprintMols
+    # for ind, smiles in enumerate(dataset.ids):
+    for ind, pdb in enumerate(dataset.ids):
+      ligand_file = os.path.join(self.pdbbind_data_folder, pdb,
+                                 "%s_ligand.sdf" % pdb)
+      suppl = Chem.SDMolSupplier(str(ligand_file), sanitize=False)
+      mol = suppl[0]
+      # mol = Chem.MolFromSmiles(smiles, sanitize=False)
+      mols.append(mol)
+      fp = FingerprintMols.FingerprintMol(mol)
+      fingerprints.append(fp)
+
+    distances = np.ones(shape=(data_len, data_len))
+    from rdkit import DataStructs
+    time1 = time.time()
+    for i in range(data_len):
+      for j in range(data_len):
+        distances[i][j] = 1 - DataStructs.FingerprintSimilarity(
+            fingerprints[i], fingerprints[j])
+    time2 = time.time()
+    print(
+        "[%s] Splitting based on Fingerprint of ligands took %0.3f s\n" %
+        (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), time2 - time1))
+
+    train_cutoff = int(frac_train * len(dataset))
+    valid_cutoff = int(frac_valid * len(dataset))
+
+    # Pick the mol closest to everything as the first element of training
+    closest_ligand = np.argmin(np.sum(distances, axis=1))
+    train_inds.append(closest_ligand)
+    cur_distances = [float('inf')] * data_len
+    self.update_distances(closest_ligand, cur_distances, distances, train_inds)
+    for i in range(1, train_cutoff):
+      closest_ligand = np.argmin(cur_distances)
+      train_inds.append(closest_ligand)
+      self.update_distances(closest_ligand, cur_distances, distances,
+                            train_inds)
+
+    # Pick the closest mol from what is left
+    index, best_dist = 0, float('inf')
+    for i in range(data_len):
+      if i in train_inds:
+        continue
+      dist = np.sum(distances[i])
+      if dist < best_dist:
+        index, best_dist = i, dist
+    valid_inds.append(index)
+
+    leave_out_indexes = train_inds + valid_inds
+    cur_distances = [float('inf')] * data_len
+    self.update_distances(index, cur_distances, distances, leave_out_indexes)
+    for i in range(1, valid_cutoff):
+      closest_ligand = np.argmin(cur_distances)
+      valid_inds.append(closest_ligand)
+      leave_out_indexes.append(closest_ligand)
+      self.update_distances(closest_ligand, cur_distances, distances,
+                            leave_out_indexes)
+
+    # Test is everything else
+    for i in range(data_len):
+      if i in leave_out_indexes:
+        continue
+      test_inds.append(i)
+    return train_inds, valid_inds, test_inds
+
+
+def ClusterFps(fps, cutoff=0.2):
+  # (ytz): this is directly copypasta'd from Greg Landrum's clustering example.
+  dists = []
+  nfps = len(fps)
+  from rdkit import DataStructs
+  for i in range(1, nfps):
+    sims = DataStructs.BulkTanimotoSimilarity(fps[i], fps[:i])
+    dists.extend([1 - x for x in sims])
+  from rdkit.ML.Cluster import Butina
+  cs = Butina.ClusterData(dists, nfps, cutoff, isDistData=True)
+  return cs
+
+
+class ButinaSplitter4pdbbind(Splitter):
+  """
+    Class for doing data splits based on the butina clustering of a bulk tanimoto
+    fingerprint matrix.
+    """
+
+  def __init__(self, pdbbind_path, *args, **kwargs):
+    self.pdbbind_path = pdbbind_path
+    super(ButinaSplitter4pdbbind, self).__init__(*args, **kwargs)
+
+  def split(self,
+            dataset,
+            seed=None,
+            frac_train=None,
+            frac_valid=None,
+            frac_test=None,
+            log_every_n=1000,
+            cutoff=0.2):
+    """
+        Splits internal compounds into train and validation based on the butina
+        clustering algorithm. This splitting algorithm has an O(N^2) run time, where N
+        is the number of elements in the dataset. The dataset is expected to be a classification
+        dataset.
+
+        This algorithm is designed to generate validation data that are novel chemotypes.
+
+        Note that this function entirely disregards the ratios for frac_train, frac_valid,
+        and frac_test. Furthermore, it does not generate a test set, only a train and valid set.
+
+        Setting a small cutoff value will generate smaller, finer clusters of high similarity,
+        whereas setting a large cutoff value will generate larger, coarser clusters of low similarity.
+        """
+    print("Performing butina clustering with cutoff of", cutoff)
+    mols = []
+    inds = []
+    from rdkit import Chem
+    from pathlib import Path
+    pdbbind_path = Path(self.pdbbind_path)
+
+    # Morgan Fingerprint need sanitize=True, so use ligand.pdb coverted by babel from ligand.mol2
+    # http://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints-circular-fingerprints
+
+    # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster results are very different to Morgan Fingerprint.
+    # http://www.rdkit.org/docs/GettingStartedInPython.html#topological-fingerprints
+    for ind, _id in enumerate(dataset.ids):
+      if pdbbind_path:
+        pdb = pdbbind_path / _id / (_id + '_ligand.pdb')
+        mol = Chem.MolFromPDBFile(str(pdb))
+        # sdf = pdbbind_path / _id / (_id + '_ligand.sdf')
+        # mol = next(Chem.SDMolSupplier(str(sdf), sanitize=False))
+      else:
+        mol = Chem.MolFromSmiles(_id)
+      if mol is None:
+        print(
+            "Warning: rdkit fail to load mol {}, will assign it to training set"
+            .format(_id))
+        inds.append(ind)
+        continue
+      mols.append(mol)
+    n_mols = len(mols)
+    from rdkit.Chem import AllChem
+    fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
+
+    # from rdkit.Chem.Fingerprints import FingerprintMols
+    # fps = [FingerprintMols.FingerprintMol(x) for x in mols]
+
+    scaffold_sets = ClusterFps(fps, cutoff=cutoff)
+    scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
+
+    for c_idx, cluster in enumerate(scaffold_sets):
+      inds.extend(cluster)
+
+    np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
+    data_len = len(dataset)
+    train_cutoff = int(frac_train * data_len)
+    valid_cutoff = int((frac_train + frac_valid) * data_len)
+    train_inds = inds[:train_cutoff]
+    valid_inds = inds[train_cutoff:valid_cutoff]
+    test_inds = inds[valid_cutoff:]
+    return train_inds, valid_inds, test_inds
+
+
+class SequenceSplitter(Splitter):
+  """
+    Class for doing data splits based on clustering of protein sequence.
+    Need uclust file from UCLUST
+
+    O(N**2) algorithm
+  """
+
+  def __init__(self, uclust_file, *args, **kwargs):
+    self.uclust_file = uclust_file
+    super(SequenceSplitter, self).__init__(*args, **kwargs)
+
+  def split(
+      self,
+      dataset,
+      # uclust=None,
+      seed=None,
+      frac_train=.8,
+      frac_valid=.1,
+      frac_test=.1,
+      log_every_n=1000):
+    """
+        Splits proteins into train/validation/test by sequence clustering.
+    """
+    # load uclust file
+    all_clust_nums = []
+    labels = []
+    with open(self.uclust_file) as f:
+      for line in f:
+        fields = line.split()
+        all_clust_nums.append(int(fields[1]))
+        labels.append(fields[8])
+
+    # cluster index of dataset ids
+    ids = dataset.ids
+    inds_clust = {}
+    for i, code in enumerate(ids):
+      try:
+        ind = labels.index(code)
+        num = all_clust_nums[ind]
+      except ValueError:
+        print(
+            "Warning: {} not in clust file, asign it to clust -1".format(code))
+        num = -1
+        continue
+      finally:
+        if num not in inds_clust:
+          inds_clust[num] = []
+        inds_clust[num].append(i)
+
+    # re numbering cluster by size
+    inds = []
+    for clust in sorted(inds_clust.values(), key=len, reverse=True):
+      inds.extend(clust)
+
+    np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
+    data_len = len(dataset)
+    train_cutoff = int(frac_train * data_len)
+    valid_cutoff = int((frac_train + frac_valid) * data_len)
+    train_inds = inds[:train_cutoff]
+    valid_inds = inds[train_cutoff:valid_cutoff]
+    test_inds = inds[valid_cutoff:]
+    return train_inds, valid_inds, test_inds
+
+
 def load_pdbbind(reload=True,
                  data_dir=None,
                  version="2015",
@@ -167,7 +423,9 @@ def load_pdbbind(reload=True,
   featurizer: Str
     Either "grid" or "atomic" for grid and atomic featurizations.
   split: Str
-    Either "random" or "index".
+    Either one of "random", "index", "fp", "mfp" and "seq" for random, index, ligand
+    Fingerprints, butina clustering with Morgan Fingerprints of ligands, sequence 
+    clustering of proteins splitting.
   split_seed: Int, optional
     Specifies the random seed for splitter.
   save_dir: Str, optional
@@ -385,9 +643,19 @@ def load_pdbbind(reload=True,
 
   # TODO(rbharath): This should be modified to contain a cluster split so
   # structures of the same protein aren't in both train/test
+  uclust_file_dir = "/pubhome/cshen/docus/projects/can-ai-do/pdbbind/usearch_result"
+  if subset == "core" and version == "2015":
+    version_suffix = "2013"
+  else:
+    version_suffix = version
+  uclust_file = os.path.join(uclust_file_dir,
+                             "INDEX_%s_data.%s.uc" % (subset, version_suffix))
   splitters = {
       'index': deepchem.splits.IndexSplitter(),
       'random': deepchem.splits.RandomSplitter(),
+      'fp': FingerprintSplitter4Pdbbind(data_folder),
+      'mfp': ButinaSplitter4pdbbind(data_folder),
+      'seq': SequenceSplitter(uclust_file),
   }
   splitter = splitters[split]
   train, valid, test = splitter.train_valid_test_split(
