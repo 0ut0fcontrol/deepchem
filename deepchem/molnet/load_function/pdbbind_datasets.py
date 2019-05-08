@@ -286,6 +286,7 @@ class ButinaSplitter4pdbbind(Splitter):
 
     mols = []
     inds_for_split = []
+    inds_in_mols_to_dataset = {}
 
     for ind, _id in enumerate(dataset.ids):
 
@@ -307,6 +308,7 @@ class ButinaSplitter4pdbbind(Splitter):
         inds_for_split.append(ind)
         continue
       mols.append(mol)
+      inds_in_mols_to_dataset[len(mols) - 1] = ind
 
     # from rdkit.Chem.Fingerprints import FingerprintMols
     # fps = [FingerprintMols.FingerprintMol(x) for x in mols]
@@ -317,7 +319,11 @@ class ButinaSplitter4pdbbind(Splitter):
     scaffold_sets = ClusterFps(fps, cutoff=cutoff)
     scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
 
-    for cluster in scaffold_sets:
+    scaffold_sets_inds_in_dataset = [[
+        inds_in_mols_to_dataset[ind_in_mols] for ind_in_mols in cluster
+    ] for cluster in scaffold_sets]
+
+    for cluster in scaffold_sets_inds_in_dataset:
       inds_for_split.extend(cluster)
 
     inds = inds_for_split
