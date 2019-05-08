@@ -253,9 +253,64 @@ class ButinaSplitter4pdbbind(Splitter):
     fingerprint matrix.
   """
 
-  def __init__(self, pdbbind_path, *args, **kwargs):
+  def __init__(self, pdbbind_path, reweight=True, *args, **kwargs):
     self.pdbbind_path = pdbbind_path
+    self.reweight = reweight
+    self.ids_weight = {}
     super(ButinaSplitter4pdbbind, self).__init__(*args, **kwargs)
+
+  def train_valid_test_split(self,
+                             dataset,
+                             train_dir=None,
+                             valid_dir=None,
+                             test_dir=None,
+                             frac_train=.8,
+                             frac_valid=.1,
+                             frac_test=.1,
+                             seed=None,
+                             log_every_n=1000,
+                             verbose=True,
+                             **kwargs):
+    """
+      Splits self into train/validation/test sets.
+
+      Returns Dataset objects.
+    """
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
+    import tempfile
+    if train_dir is None:
+      train_dir = tempfile.mkdtemp()
+    if valid_dir is None:
+      valid_dir = tempfile.mkdtemp()
+    if test_dir is None:
+      test_dir = tempfile.mkdtemp()
+
+    def reweight(dataset):
+      def fn(x, y, w, ids):
+        for i, _id in enumerate(ids):
+          w[i][0] = np.float64(self.ids_weight[_id])
+        return x, y, w, ids
+
+      return dataset.transform(fn)
+
+    if self.reweight:
+      dataset = reweight(dataset)
+
+    train_dataset = dataset.select(train_inds, train_dir)
+    if frac_valid != 0:
+      valid_dataset = dataset.select(valid_inds, valid_dir)
+    else:
+      valid_dataset = None
+    test_dataset = dataset.select(test_inds, test_dir)
+
+    return train_dataset, valid_dataset, test_dataset
 
   def split(self,
             dataset,
@@ -286,9 +341,11 @@ class ButinaSplitter4pdbbind(Splitter):
 
     mols = []
     inds_for_split = []
+    inds_ids = {}
     inds_in_mols_to_dataset = {}
 
     for ind, _id in enumerate(dataset.ids):
+      inds_ids[ind] = _id
 
       # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster
       # results are very different to Morgan Fingerprint.
@@ -306,6 +363,7 @@ class ButinaSplitter4pdbbind(Splitter):
             "WARNING: RDKit failed to load ligand of {}, assign it to training dataset."
             .format(_id))
         inds_for_split.append(ind)
+        self.ids_weight[_id] = 1.0
         continue
       mols.append(mol)
       inds_in_mols_to_dataset[len(mols) - 1] = ind
@@ -325,6 +383,8 @@ class ButinaSplitter4pdbbind(Splitter):
 
     for cluster in scaffold_sets_inds_in_dataset:
       inds_for_split.extend(cluster)
+      for ind in cluster:
+        self.ids_weight[inds_ids[ind]] = 1.0 / len(cluster)
 
     inds = inds_for_split
 
@@ -346,14 +406,68 @@ class SequenceSplitter(Splitter):
     O(N**2) algorithm
   """
 
-  def __init__(self, uclust_file, *args, **kwargs):
+  def __init__(self, uclust_file, reweight=True, *args, **kwargs):
     self.uclust_file = uclust_file
+    self.reweight = reweight
+    self.ids_weight = {}
     super(SequenceSplitter, self).__init__(*args, **kwargs)
+
+  def train_valid_test_split(self,
+                             dataset,
+                             train_dir=None,
+                             valid_dir=None,
+                             test_dir=None,
+                             frac_train=.8,
+                             frac_valid=.1,
+                             frac_test=.1,
+                             seed=None,
+                             log_every_n=1000,
+                             verbose=True,
+                             **kwargs):
+    """
+      Splits self into train/validation/test sets.
+
+      Returns Dataset objects.
+      """
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
+    import tempfile
+    if train_dir is None:
+      train_dir = tempfile.mkdtemp()
+    if valid_dir is None:
+      valid_dir = tempfile.mkdtemp()
+    if test_dir is None:
+      test_dir = tempfile.mkdtemp()
+
+    def reweight(dataset):
+      print(self.ids_weight)
+      def fn(x, y, w, ids):
+        for i, _id in enumerate(ids):
+          w[i][0] = np.float64(self.ids_weight[_id])
+        return x, y, w, ids
+      return dataset.transform(fn)
+
+    if self.reweight:
+      dataset = reweight(dataset)
+
+    train_dataset = dataset.select(train_inds, train_dir)
+    if frac_valid != 0:
+      valid_dataset = dataset.select(valid_inds, valid_dir)
+    else:
+      valid_dataset = None
+    test_dataset = dataset.select(test_inds, test_dir)
+
+    return train_dataset, valid_dataset, test_dataset
 
   def split(
       self,
       dataset,
-      # uclust=None,
       seed=None,
       frac_train=.8,
       frac_valid=.1,
@@ -376,6 +490,7 @@ class SequenceSplitter(Splitter):
 
     # cluster index of dataset ids
     cluster_inds_dataset_inds = {}
+    cluster_inds_dataset_ids = {}
     for dataset_ind, _id in enumerate(dataset.ids):
       try:
         cluster_ind = uc_cluster_inds[uc_labels.index(_id)]
@@ -388,7 +503,14 @@ class SequenceSplitter(Splitter):
       finally:
         if cluster_ind not in cluster_inds_dataset_inds:
           cluster_inds_dataset_inds[cluster_ind] = []
+        if cluster_ind not in cluster_inds_dataset_ids:
+          cluster_inds_dataset_ids[cluster_ind] = []
         cluster_inds_dataset_inds[cluster_ind].append(dataset_ind)
+        cluster_inds_dataset_ids[cluster_ind].append(_id)
+
+    for cluster_ind, dataset_ids in cluster_inds_dataset_ids.items():
+      for _id in dataset_ids:
+        self.ids_weight[_id] = 1.0 / len(cluster_inds_dataset_ids[cluster_ind])
 
     # re numbering cluster by size
     inds = []
@@ -415,6 +537,7 @@ def load_pdbbind(reload=True,
                  featurizer="grid",
                  split="random",
                  split_seed=None,
+                 reweight=True,
                  save_dir=None,
                  save_timestamp=False):
   """Load raw PDBBind dataset by featurization and split.
@@ -666,8 +789,8 @@ def load_pdbbind(reload=True,
       'index': deepchem.splits.IndexSplitter(),
       'random': deepchem.splits.RandomSplitter(),
       'fp': FingerprintSplitter4Pdbbind(data_folder),
-      'mfp': ButinaSplitter4pdbbind(data_folder),
-      'seq': SequenceSplitter(uclust_file),
+      'mfp': ButinaSplitter4pdbbind(data_folder, reweight=reweight),
+      'seq': SequenceSplitter(uclust_file, reweight=reweight),
   }
   splitter = splitters[split]
   train, valid, test = splitter.train_valid_test_split(
