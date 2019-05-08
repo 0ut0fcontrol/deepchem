@@ -361,3 +361,26 @@ class AtomicConvModel(TensorGraph):
         orig_dict[self.complex_z] = complex_Z_b
         orig_dict[self.label] = np.reshape(y_b, newshape=(batch_size, 1))
         yield orig_dict
+
+  def predict(self, dataset, transformers=[], outputs=None):
+    """
+    Uses self to make predictions on provided Dataset object.
+
+    Parameters
+    ----------
+    dataset: dc.data.Dataset
+      Dataset to make prediction on
+    transformers: list
+      List of dc.trans.Transformers.
+    outputs: object
+      If outputs is None, then will assume outputs=self.default_outputs. If outputs is
+      a Layer/Tensor, then will evaluate and return as a single ndarray. If
+      outputs is a list of Layers/Tensors, will return a list of ndarrays.
+
+    Returns
+    -------
+    results: numpy ndarray or list of numpy ndarrays
+    """
+    generator = self.default_generator(dataset, predict=True, pad_batches=True)
+    y_pred = self.predict_on_generator(generator, transformers, outputs)
+    return y_pred[:len(dataset)]
