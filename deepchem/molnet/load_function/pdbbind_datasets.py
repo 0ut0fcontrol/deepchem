@@ -161,7 +161,7 @@ class FingerprintSplitter4Pdbbind(FingerprintSplitter):
             frac_test=.1,
             log_every_n=1000):
     """
-        Splits internal compounds into train/validation/test by fingerprint.
+      Splits internal compounds into train/validation/test by fingerprint.
     """
     np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
     data_len = len(dataset)
@@ -251,7 +251,7 @@ class ButinaSplitter4pdbbind(Splitter):
   """
     Class for doing data splits based on the butina clustering of a bulk tanimoto
     fingerprint matrix.
-    """
+  """
 
   def __init__(self, pdbbind_path, *args, **kwargs):
     self.pdbbind_path = pdbbind_path
@@ -266,58 +266,61 @@ class ButinaSplitter4pdbbind(Splitter):
             log_every_n=1000,
             cutoff=0.2):
     """
-        Splits internal compounds into train and validation based on the butina
-        clustering algorithm. This splitting algorithm has an O(N^2) run time, where N
-        is the number of elements in the dataset. The dataset is expected to be a classification
-        dataset.
+      Splits internal compounds into train and validation based on the butina
+      clustering algorithm. This splitting algorithm has an O(N^2) run time, where N
+      is the number of elements in the dataset. The dataset is expected to be a classification
+      dataset.
 
-        This algorithm is designed to generate validation data that are novel chemotypes.
+      This algorithm is designed to generate validation data that are novel chemotypes.
 
-        Note that this function entirely disregards the ratios for frac_train, frac_valid,
-        and frac_test. Furthermore, it does not generate a test set, only a train and valid set.
+      Note that this function entirely disregards the ratios for frac_train, frac_valid,
+      and frac_test. Furthermore, it does not generate a test set, only a train and valid set.
 
-        Setting a small cutoff value will generate smaller, finer clusters of high similarity,
-        whereas setting a large cutoff value will generate larger, coarser clusters of low similarity.
-        """
+      Setting a small cutoff value will generate smaller, finer clusters of high similarity,
+      whereas setting a large cutoff value will generate larger, coarser clusters of low similarity.
+    """
     print("Performing butina clustering with cutoff of", cutoff)
-    mols = []
-    inds = []
     from rdkit import Chem
     from pathlib import Path
     pdbbind_path = Path(self.pdbbind_path)
 
-    # Morgan Fingerprint need sanitize=True, so use ligand.pdb coverted by babel from ligand.mol2
-    # http://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints-circular-fingerprints
+    mols = []
+    inds_for_split = []
 
-    # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster results are very different to Morgan Fingerprint.
-    # http://www.rdkit.org/docs/GettingStartedInPython.html#topological-fingerprints
     for ind, _id in enumerate(dataset.ids):
-      if pdbbind_path:
-        pdb = pdbbind_path / _id / (_id + '_ligand.pdb')
-        mol = Chem.MolFromPDBFile(str(pdb))
-        # sdf = pdbbind_path / _id / (_id + '_ligand.sdf')
-        # mol = next(Chem.SDMolSupplier(str(sdf), sanitize=False))
-      else:
-        mol = Chem.MolFromSmiles(_id)
+
+      # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster
+      # results are very different to Morgan Fingerprint.
+      # http://www.rdkit.org/docs/GettingStartedInPython.html#topological-fingerprints
+      # sdf = pdbbind_path / _id / (_id + '_ligand.sdf')
+      # mol = next(Chem.SDMolSupplier(str(sdf), sanitize=False))
+
+      # Morgan Fingerprint need sanitize=True, so use ligand.pdb coverted by babel from ligand.mol2
+      # http://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints-circular-fingerprints
+      pdb = pdbbind_path / _id / (_id + '_ligand.pdb')
+      mol = Chem.MolFromPDBFile(str(pdb))
+
       if mol is None:
         print(
-            "Warning: rdkit fail to load mol {}, will assign it to training set"
+            "WARNING: RDKit failed to load ligand of {}, assign it to training dataset."
             .format(_id))
-        inds.append(ind)
+        inds_for_split.append(ind)
         continue
       mols.append(mol)
-    n_mols = len(mols)
-    from rdkit.Chem import AllChem
-    fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
 
     # from rdkit.Chem.Fingerprints import FingerprintMols
     # fps = [FingerprintMols.FingerprintMol(x) for x in mols]
 
+    from rdkit.Chem import AllChem
+    fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
+
     scaffold_sets = ClusterFps(fps, cutoff=cutoff)
     scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
 
-    for c_idx, cluster in enumerate(scaffold_sets):
-      inds.extend(cluster)
+    for cluster in scaffold_sets:
+      inds_for_split.extend(cluster)
+
+    inds = inds_for_split
 
     np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
     data_len = len(dataset)
@@ -351,38 +354,41 @@ class SequenceSplitter(Splitter):
       frac_test=.1,
       log_every_n=1000):
     """
-        Splits proteins into train/validation/test by sequence clustering.
+      Splits proteins into train/validation/test by sequence clustering.
     """
     # load uclust file
-    all_clust_nums = []
-    labels = []
+    uc_cluster_inds, uc_labels = [], []
     with open(self.uclust_file) as f:
       for line in f:
-        fields = line.split()
-        all_clust_nums.append(int(fields[1]))
-        labels.append(fields[8])
+        # more clear even use uc_labels.index()
+        if line[0] != "C":
+          fields = line.split()
+          uc_cluster_inds.append(int(fields[1]))
+          uc_labels.append(fields[8])
+        else:
+          break
 
     # cluster index of dataset ids
-    ids = dataset.ids
-    inds_clust = {}
-    for i, code in enumerate(ids):
+    cluster_inds_dataset_inds = {}
+    for dataset_ind, _id in enumerate(dataset.ids):
       try:
-        ind = labels.index(code)
-        num = all_clust_nums[ind]
+        cluster_ind = uc_cluster_inds[uc_labels.index(_id)]
       except ValueError:
         print(
-            "Warning: {} not in clust file, asign it to clust -1".format(code))
-        num = -1
+            "WARNING: {} not in cluster file, assign it to cluster -1".format(
+                _id))
+        cluster_ind = -1
         continue
       finally:
-        if num not in inds_clust:
-          inds_clust[num] = []
-        inds_clust[num].append(i)
+        if cluster_ind not in cluster_inds_dataset_inds:
+          cluster_inds_dataset_inds[cluster_ind] = []
+        cluster_inds_dataset_inds[cluster_ind].append(dataset_ind)
 
     # re numbering cluster by size
     inds = []
-    for clust in sorted(inds_clust.values(), key=len, reverse=True):
-      inds.extend(clust)
+    for dataset_inds in sorted(
+        cluster_inds_dataset_inds.values(), key=len, reverse=True):
+      inds.extend(dataset_inds)
 
     np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
     data_len = len(dataset)
