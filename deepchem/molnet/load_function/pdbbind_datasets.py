@@ -374,7 +374,9 @@ class ButinaSplitter4pdbbind(Splitter):
     from rdkit.Chem import AllChem
     fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
 
-    scaffold_sets = ClusterFps(fps, cutoff=cutoff)
+    scaffold_sets = list(ClusterFps(fps, cutoff=cutoff))
+    np.random.seed(seed)
+    np.random.shuffle(scaffold_sets)
     scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
 
     scaffold_sets_inds_in_dataset = [[
@@ -514,8 +516,10 @@ class SequenceSplitter(Splitter):
 
     # re numbering cluster by size
     inds = []
-    for dataset_inds in sorted(
-        cluster_inds_dataset_inds.values(), key=len, reverse=True):
+    np.random.seed(seed)
+    clusters = list(cluster_inds_dataset_inds.values())
+    np.random.shuffle(clusters)
+    for dataset_inds in sorted(clusters, key=len, reverse=True):
       inds.extend(dataset_inds)
 
     np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
