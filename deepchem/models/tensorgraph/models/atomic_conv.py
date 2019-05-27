@@ -148,7 +148,8 @@ class AtomicConvScore(Layer):
     frag1_energy = tf.reduce_sum(frag1_outputs, 1)
     frag2_energy = tf.reduce_sum(frag2_outputs, 1)
     complex_energy = tf.reduce_sum(complex_outputs, 1)
-    binding_energy = complex_energy - (frag1_energy + frag2_energy)
+    # binding_energy = complex_energy - (frag1_energy + frag2_energy)
+    binding_energy = frag1_energy
     self.out_tensor = tf.expand_dims(binding_energy, axis=1)
     return self.out_tensor
 
