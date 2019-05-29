@@ -777,7 +777,7 @@ def load_pdbbind(reload=True,
   # No transformations of data
   if transform:
     transformers = [
-        dc.trans.NormalizationTransformer(transform_y=True, dataset=dataset)
+        deepchem.trans.NormalizationTransformer(transform_y=True, dataset=dataset)
     ]
   else:
     transformers = []

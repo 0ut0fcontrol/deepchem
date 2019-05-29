@@ -56,6 +56,18 @@ model = dc.models.AtomicConvModel(batch_size=batch_size,
                                   frag2_num_atoms=frag2_num_atoms,
                                   complex_num_atoms=complex_num_atoms)
 
+train_y = train_dataset.y
+valid_y = valid_dataset.y
+test_y = test_dataset.y
+
+if args.trans:
+    for transformer in reversed(transformers):
+        if transformer.transform_y:
+            train_y = transformer.untransform(train_y)
+            valid_y = transformer.untransform(valid_y)
+            test_y = transformer.untransform(test_y)
+
+
 # Fit trained model
 print("Fitting model on train dataset")
 patience = 0
@@ -90,21 +102,21 @@ for i in range(100):
 
     df = pd.DataFrame({
         '#id': np.ravel(train_dataset.ids),
-        'y': np.ravel(train_dataset.y),
+        'y': np.ravel(train_y),
         'y_pred': np.ravel(train_y_pred)
     })
     df.to_csv(args.subset + '.train.csv', index=False)
 
     df = pd.DataFrame({
         '#id': np.ravel(valid_dataset.ids),
-        'y': np.ravel(valid_dataset.y),
+        'y': np.ravel(valid_y),
         'y_pred': np.ravel(valid_y_pred)
     })
     df.to_csv(args.subset + '.valid.csv', index=False)
 
     df = pd.DataFrame({
         '#id': np.ravel(test_dataset.ids),
-        'y': np.ravel(test_dataset.y),
+        'y': np.ravel(test_y),
         'y_pred': np.ravel(test_y_pred)
     })
     df.to_csv(args.subset + '.test.csv', index=False)
@@ -115,21 +127,21 @@ test_y_pred = model.predict(test_dataset, transformers)
 
 df = pd.DataFrame({
     '#id': np.ravel(train_dataset.ids),
-    'y': np.ravel(train_dataset.y),
+    'y': np.ravel(train_y),
     'y_pred': np.ravel(train_y_pred)
 })
 df.to_csv(args.subset + '.train.final.csv', index=False)
 
 df = pd.DataFrame({
     '#id': np.ravel(valid_dataset.ids),
-    'y': np.ravel(valid_dataset.y),
+    'y': np.ravel(valid_y),
     'y_pred': np.ravel(valid_y_pred)
 })
 df.to_csv(args.subset + '.valid.final.csv', index=False)
 
 df = pd.DataFrame({
     '#id': np.ravel(test_dataset.ids),
-    'y': np.ravel(test_dataset.y),
+    'y': np.ravel(test_y),
     'y_pred': np.ravel(test_y_pred)
 })
 df.to_csv(args.subset + '.test.final.csv', index=False)
