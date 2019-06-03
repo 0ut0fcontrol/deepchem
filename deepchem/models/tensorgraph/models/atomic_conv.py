@@ -57,9 +57,10 @@ def InitializeWeightsBiases(prev_layer_size,
 
 class AtomicConvScore(Layer):
 
-  def __init__(self, atom_types, layer_sizes, **kwargs):
+  def __init__(self, atom_types, layer_sizes, component, **kwargs):
     self.atom_types = atom_types
     self.layer_sizes = layer_sizes
+    self.component = component
     super(AtomicConvScore, self).__init__(**kwargs)
 
   def create_tensor(self, in_layers=None, set_tensors=True, **kwargs):
@@ -148,9 +149,17 @@ class AtomicConvScore(Layer):
     frag1_energy = tf.reduce_sum(frag1_outputs, 1)
     frag2_energy = tf.reduce_sum(frag2_outputs, 1)
     complex_energy = tf.reduce_sum(complex_outputs, 1)
-    binding_energy = complex_energy - (frag1_energy + frag2_energy)
-    # binding_energy = frag1_energy
-    self.out_tensor = tf.expand_dims(binding_energy, axis=1)
+    if self.component == 'binding':
+      target_energy = complex_energy - (frag1_energy + frag2_energy)
+    elif self.component == 'complex':
+      target_energy = complex_energy
+    elif self.component == 'ligand':
+      target_energy = frag1_energy
+    elif self.component == 'protein':
+      target_energy = frag2_energy
+    else:
+      raise ValueError('Unkown component {}'.format(self.component))
+    self.out_tensor = tf.expand_dims(target_energy, axis=1)
     return self.out_tensor
 
 
@@ -172,6 +181,7 @@ class AtomicConvModel(TensorGraph):
                ], [0.0, 4.0, 8.0], [0.4]],
                layer_sizes=[32, 32, 16],
                learning_rate=0.001,
+               component='binding',
                **kwargs):
     """Implements an Atomic Convolution Model.
 
@@ -254,10 +264,12 @@ class AtomicConvModel(TensorGraph):
     score = AtomicConvScore(
         self.atom_types,
         layer_sizes,
+        component,
         in_layers=[
             frag1_conv, frag2_conv, complex_conv, self.frag1_z, self.frag2_z,
             self.complex_z
-        ])
+        ],
+    )
 
     self.label = Label(shape=(None, 1))
     loss = ReduceMean(in_layers=L2Loss(in_layers=[score, self.label]))
