@@ -694,10 +694,8 @@ def load_pdbbind(reload=True,
     # max num atoms instead of exact.
     frag1_num_atoms = 70  # for ligand atoms
     if load_binding_pocket:
-      # frag2_num_atoms = 1000
-      # complex_num_atoms = 1070
-      frag2_num_atoms = 70
-      complex_num_atoms = 140
+      frag2_num_atoms = 1000
+      complex_num_atoms = 1070
     else:
       frag2_num_atoms = 24000  # for protein atoms
       complex_num_atoms = 24070  # in total

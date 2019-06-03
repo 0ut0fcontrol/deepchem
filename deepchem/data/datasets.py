@@ -962,7 +962,10 @@ class DiskDataset(Dataset):
     def generator():
       for shard_num, row in self.metadata_df.iterrows():
         X, y, w, ids = self.get_shard(shard_num)
-        newx, newy, neww = fn(X, y, w)
+        try:
+          newx, newy, neww = fn(X, y, w)
+        except TypeError:
+          newx, newy, neww, ids = fn(X, y, w, ids)
         yield (newx, newy, neww, ids)
 
     return DiskDataset.create_dataset(
