@@ -399,6 +399,162 @@ class ButinaSplitter4pdbbind(Splitter):
     test_inds = inds[valid_cutoff:]
     return train_inds, valid_inds, test_inds
 
+class ScaffoldSplitter4pdbbind(Splitter):
+  """
+    Class for doing data splits based on the butina clustering of a bulk tanimoto
+    fingerprint matrix.
+  """
+
+  def __init__(self, pdbbind_path, reweight=True, *args, **kwargs):
+    self.pdbbind_path = pdbbind_path
+    self.reweight = reweight
+    self.ids_weight = {}
+    super(ScaffoldSplitter4pdbbind, self).__init__(*args, **kwargs)
+
+  def train_valid_test_split(self,
+                             dataset,
+                             train_dir=None,
+                             valid_dir=None,
+                             test_dir=None,
+                             frac_train=.8,
+                             frac_valid=.1,
+                             frac_test=.1,
+                             seed=None,
+                             log_every_n=1000,
+                             verbose=True,
+                             **kwargs):
+    """
+      Splits self into train/validation/test sets.
+
+      Returns Dataset objects.
+    """
+    train_inds, valid_inds, test_inds = self.split(dataset,
+                                                   seed=seed,
+                                                   frac_train=frac_train,
+                                                   frac_test=frac_test,
+                                                   frac_valid=frac_valid,
+                                                   log_every_n=log_every_n,
+                                                   **kwargs)
+    import tempfile
+    if train_dir is None:
+      train_dir = tempfile.mkdtemp()
+    if valid_dir is None:
+      valid_dir = tempfile.mkdtemp()
+    if test_dir is None:
+      test_dir = tempfile.mkdtemp()
+
+    def reweight(dataset):
+
+      def fn(x, y, w, ids):
+        for i, _id in enumerate(ids):
+          w[i][0] = np.float64(self.ids_weight[_id])
+        return x, y, w, ids
+
+      return dataset.transform(fn)
+
+    if self.reweight:
+      dataset = reweight(dataset)
+
+    train_dataset = dataset.select(train_inds, train_dir)
+    if frac_valid != 0:
+      valid_dataset = dataset.select(valid_inds, valid_dir)
+    else:
+      valid_dataset = None
+    test_dataset = dataset.select(test_inds, test_dir)
+
+    return train_dataset, valid_dataset, test_dataset
+
+  def split(self,
+            dataset,
+            seed=None,
+            frac_train=None,
+            frac_valid=None,
+            frac_test=None,
+            log_every_n=1000,
+            cutoff=0.2):
+    """
+      Splits internal compounds into train and validation based on the butina
+      clustering algorithm. This splitting algorithm has an O(N^2) run time, where N
+      is the number of elements in the dataset. The dataset is expected to be a classification
+      dataset.
+
+      This algorithm is designed to generate validation data that are novel chemotypes.
+
+      Note that this function entirely disregards the ratios for frac_train, frac_valid,
+      and frac_test. Furthermore, it does not generate a test set, only a train and valid set.
+
+      Setting a small cutoff value will generate smaller, finer clusters of high similarity,
+      whereas setting a large cutoff value will generate larger, coarser clusters of low similarity.
+    """
+    print("Performing butina clustering with cutoff of", cutoff)
+    from rdkit import Chem
+    from pathlib import Path
+    from rdkit.Chem.Scaffolds import MurckoScaffold
+    pdbbind_path = Path(self.pdbbind_path)
+
+    mols = []
+    inds_for_split = []
+    inds_ids = {}
+    inds_in_mols_to_dataset = {}
+
+    for ind, _id in enumerate(dataset.ids):
+      inds_ids[ind] = _id
+
+      # FingerprintMols.FingerprintMol is RDKFingerprint, not error when sanitize=False, but the cluster
+      # results are very different to Morgan Fingerprint.
+      # http://www.rdkit.org/docs/GettingStartedInPython.html#topological-fingerprints
+      # sdf = pdbbind_path / _id / (_id + '_ligand.sdf')
+      # mol = next(Chem.SDMolSupplier(str(sdf), sanitize=False))
+
+      # Morgan Fingerprint need sanitize=True, so use ligand.pdb coverted by babel from ligand.mol2
+      # http://www.rdkit.org/docs/GettingStartedInPython.html#morgan-fingerprints-circular-fingerprints
+      pdb = pdbbind_path / _id / (_id + '_ligand.pdb')
+      mol = Chem.MolFromPDBFile(str(pdb))
+
+      if mol is None:
+        print(
+            "WARNING: RDKit failed to load ligand of {}, assign it to training dataset."
+            .format(_id))
+        inds_for_split.append(ind)
+        self.ids_weight[_id] = 1.0
+        continue
+      # use scaffold for clustering.
+      # smiles = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=True)
+      mol = MurckoScaffold.GetScaffoldForMol(mol)
+      mols.append(mol)
+      inds_in_mols_to_dataset[len(mols) - 1] = ind
+
+    # from rdkit.Chem.Fingerprints import FingerprintMols
+    # fps = [FingerprintMols.FingerprintMol(x) for x in mols]
+
+    from rdkit.Chem import AllChem
+    fps = [AllChem.GetMorganFingerprintAsBitVect(x, 2, 1024) for x in mols]
+
+    scaffold_sets = list(ClusterFps(fps, cutoff=cutoff))
+    np.random.seed(seed)
+    np.random.shuffle(scaffold_sets)
+    scaffold_sets = sorted(scaffold_sets, key=lambda x: -len(x))
+
+    scaffold_sets_inds_in_dataset = [[
+        inds_in_mols_to_dataset[ind_in_mols] for ind_in_mols in cluster
+    ] for cluster in scaffold_sets]
+
+    for cluster in scaffold_sets_inds_in_dataset:
+      inds_for_split.extend(cluster)
+      for ind in cluster:
+        self.ids_weight[inds_ids[ind]] = 1.0 / len(cluster)
+
+    inds = inds_for_split
+
+    np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
+    data_len = len(dataset)
+    train_cutoff = int(frac_train * data_len)
+    valid_cutoff = int((frac_train + frac_valid) * data_len)
+    train_inds = inds[:train_cutoff]
+    valid_inds = inds[train_cutoff:valid_cutoff]
+    test_inds = inds[valid_cutoff:]
+    return train_inds, valid_inds, test_inds
+
 
 class SequenceSplitter(Splitter):
   """
@@ -802,6 +958,7 @@ def load_pdbbind(reload=True,
       'fp': FingerprintSplitter4Pdbbind(data_folder),
       'mfp': ButinaSplitter4pdbbind(data_folder, reweight=reweight),
       'seq': SequenceSplitter(uclust_file, reweight=reweight),
+      'scaffold':ScaffoldSplitter4pdbbind(data_folder, reweight=reweight),
   }
   splitter = splitters[split]
   train, valid, test = splitter.train_valid_test_split(dataset, seed=split_seed)
