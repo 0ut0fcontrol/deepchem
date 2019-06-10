@@ -399,6 +399,7 @@ class ButinaSplitter4pdbbind(Splitter):
     test_inds = inds[valid_cutoff:]
     return train_inds, valid_inds, test_inds
 
+
 class ScaffoldSplitter4pdbbind(Splitter):
   """
     Class for doing data splits based on the butina clustering of a bulk tanimoto
@@ -691,7 +692,7 @@ def load_pdbbind(reload=True,
                  data_dir=None,
                  version="2015",
                  subset="core",
-                 shard_size=None,
+                 shard_size=4096,
                  load_binding_pocket=False,
                  featurizer="grid",
                  split="random",
@@ -742,196 +743,206 @@ def load_pdbbind(reload=True,
   if save_dir == None:
     save_dir = deepchem_dir
   if load_binding_pocket:
-    save_folder = os.path.join(
-        save_dir, "from-pdbbind",
-        "protein_pocket-%s-%s-%s" % (subset, featurizer, split))
+    feat_dir = os.path.join(save_dir, "from-pdbbind",
+                            "protein_pocket-%s-%s" % (subset, featurizer))
   else:
-    save_folder = os.path.join(
-        save_dir, "from-pdbbind",
-        "full_protein-%s-%s-%s" % (subset, featurizer, split))
+    feat_dir = os.path.join(save_dir, "from-pdbbind",
+                            "full_protein-%s-%s" % (subset, featurizer))
 
   if save_timestamp:
-    save_folder = "%s-%s-%s" % (save_folder,
-                                time.strftime("%Y%m%d", time.localtime()),
-                                re.search(r"\.(.*)", str(time.time())).group(1))
+    feat_dir = "%s-%s-%s" % (feat_dir, time.strftime(
+        "%Y%m%d", time.localtime()), re.search(r"\.(.*)", str(
+            time.time())).group(1))
 
-  if reload:
-    if not os.path.exists(save_folder):
-      raise IOError("Cannot find saved dataset from %s!" % save_folder)
-    print("\nLoading featurized and splitted dataset from:\n%s\n" % save_folder)
-    loaded, all_dataset, transformers = deepchem.utils.save.load_dataset_from_disk(
-        save_folder)
-    if loaded:
-      return pdbbind_tasks, all_dataset, transformers
+  loaded = False
+  if split is not None:
+    if split_seed:
+      split_dir = os.path.join(feat_dir, split + str(split_seed))
     else:
-      raise IOError(
-          "Failed to load featurized and splitted dataset from:\n%s\n" %
-          save_folder)
+      split_dir = os.path.join(feat_dir, str(split))
+    if reload:
+      print("\nReloading splitted dataset from:\n%s\n" % split_dir)
+      loaded, all_dataset, transformers = deepchem.utils.save.load_dataset_from_disk(
+          split_dir)
+      if loaded:
+        return pdbbind_tasks, all_dataset, transformers
+      else:
+        print('Fail to reload splitted dataset.')
 
-  dataset_file = os.path.join(data_dir, "pdbbind_v2015.tar.gz")
-  if not os.path.exists(dataset_file):
-    logger.warning("About to download PDBBind full dataset. Large file, 2GB")
-    deepchem.utils.download_url(
-        'http://deepchem.io.s3-website-us-west-1.amazonaws.com/datasets/' +
-        "pdbbind_v2015.tar.gz",
-        dest_dir=data_dir)
-  if os.path.exists(data_folder):
-    logger.info("PDBBind full dataset already exists.")
-  else:
-    print("Untarring full dataset...")
-    deepchem.utils.untargz_file(dataset_file,
-                                dest_dir=os.path.join(data_dir, "pdbbind"))
+  if reload and loaded == False:
+    print("Reloading featurized dataset:\n%s\n" % feat_dir)
+    try:
+      dataset = deepchem.data.DiskDataset(feat_dir)
+      loaded = True
+    except ValueError:
+      print('Fail to reload featurized dataset.')
 
-  print("\nRaw dataset:\n%s" % data_folder)
-  print("\nFeaturized and splitted dataset:\n%s" % save_folder)
-
-  if version == "2015":
-    if subset == "core":
-      index_labels_file = os.path.join(data_folder, "index",
-                                       "INDEX_core_data.2013")
-    elif subset == "refined":
-      index_labels_file = os.path.join(data_folder, "index",
-                                       "INDEX_refined_data.2015")
-    elif subset == "general_PL":
-      index_labels_file = os.path.join(data_folder, "index",
-                                       "INDEX_general_PL_data.2015")
+  if loaded == False:
+    print('Start to featurize dataset form raw data ...')
+    if os.path.exists(data_folder):
+      logger.info("PDBBind full dataset already exists.")
     else:
-      raise ValueError("Other subsets not supported for version %s" % version)
+      dataset_file = os.path.join(data_dir, "pdbbind_v2015.tar.gz")
+      if not os.path.exists(dataset_file):
+        logger.warning(
+            "About to download PDBBind full dataset. Large file, 2GB")
+        deepchem.utils.download_url(
+            'http://deepchem.io.s3-website-us-west-1.amazonaws.com/datasets/' +
+            "pdbbind_v2015.tar.gz",
+            dest_dir=data_dir)
 
-  elif version == "2018":
-    if subset == "refined":
-      index_labels_file = os.path.join(data_folder, "index",
-                                       "INDEX_refined_data.2018")
-    elif subset == "general_PL":
-      index_labels_file = os.path.join(data_folder, "index",
-                                       "INDEX_general_PL_data.2018")
+      print("Untarring full dataset...")
+      deepchem.utils.untargz_file(dataset_file,
+                                  dest_dir=os.path.join(data_dir, "pdbbind"))
+
+    print("\nRaw dataset:\n%s" % data_folder)
+    print("\nFeaturized dataset:\n%s" % feat_dir)
+
+    if version == "2015":
+      if subset == "core":
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_core_data.2013")
+      elif subset == "refined":
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_refined_data.2015")
+      elif subset == "general_PL":
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_general_PL_data.2015")
+      else:
+        raise ValueError("%s subsets not supported for version %s" %
+                         (subset, version))
+
+    elif version == "2018":
+      if subset == "refined":
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_refined_data.2018")
+      elif subset == "general_PL":
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_general_PL_data.2018")
+      else:
+        raise ValueError("%s subsets not supported for version %s" %
+                         (subset, version))
     else:
-      raise ValueError("Other subsets not supported for version %s" % version)
+      raise ValueError("version %s not supported" % (version))
 
-  else:
-    raise ValueError("Other versions not supported")
-
-  # Extract locations of data
-  with open(index_labels_file, "r") as g:
-    pdbs = [line[:4] for line in g.readlines() if line[0] != "#"]
-  if load_binding_pocket:
-    protein_files = [
-        # os.path.join(data_folder, pdb, "%s_pocket.pdb" % pdb) for pdb in pdbs
+    # Extract locations of data
+    with open(index_labels_file, "r") as g:
+      pdbs = [line[:4] for line in g.readlines() if line[0] != "#"]
+    if load_binding_pocket:
+      protein_files = [
+          # os.path.join(data_folder, pdb, "%s_pocket.pdb" % pdb) for pdb in pdbs
+          os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
+      ]
+    else:
+      protein_files = [
+          os.path.join(data_folder, pdb, "%s_protein.pdb" % pdb) for pdb in pdbs
+      ]
+    ligand_files = [
         os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
     ]
-  else:
-    protein_files = [
-        os.path.join(data_folder, pdb, "%s_protein.pdb" % pdb) for pdb in pdbs
-    ]
-  ligand_files = [
-      os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
-  ]
 
-  # Extract labels
-  with open(index_labels_file, "r") as g:
-    labels = np.array([
-        # Lines have format
-        # PDB code, resolution, release year, -logKd/Ki, Kd/Ki, reference, ligand name
-        # The base-10 logarithm, -log kd/pk
-        float(line.split()[3]) for line in g.readlines() if line[0] != "#"
-    ])
+    # Extract labels
+    with open(index_labels_file, "r") as g:
+      labels = np.array([
+          # Lines have format
+          # PDB code, resolution, release year, -logKd/Ki, Kd/Ki, reference, ligand name
+          # The base-10 logarithm, -log kd/pk
+          float(line.split()[3]) for line in g.readlines() if line[0] != "#"
+      ])
 
-  # Featurize Data
-  if featurizer == "grid":
-    featurizer = rgf.RdkitGridFeaturizer(voxel_width=2.0,
-                                         feature_types=[
-                                             'ecfp', 'splif', 'hbond',
-                                             'salt_bridge', 'pi_stack',
-                                             'cation_pi', 'charge'
-                                         ],
-                                         flatten=True)
-  elif featurizer == "atomic" or featurizer == "atomic_conv":
-    # Pulled from PDB files. For larger datasets with more PDBs, would use
-    # max num atoms instead of exact.
-    frag1_num_atoms = 70  # for ligand atoms
-    if load_binding_pocket:
-      frag2_num_atoms = 1000
-      complex_num_atoms = 1070
-    else:
-      frag2_num_atoms = 24000  # for protein atoms
-      complex_num_atoms = 24070  # in total
-    max_num_neighbors = 4
-    # Cutoff in angstroms
-    neighbor_cutoff = 4
-    if featurizer == "atomic":
-      featurizer = ComplexNeighborListFragmentAtomicCoordinates(
-          frag1_num_atoms=frag1_num_atoms,
-          frag2_num_atoms=frag2_num_atoms,
-          complex_num_atoms=complex_num_atoms,
-          max_num_neighbors=max_num_neighbors,
-          neighbor_cutoff=neighbor_cutoff)
-    if featurizer == "atomic_conv":
-      featurizer = AtomicConvFeaturizer(labels=labels,
-                                        frag1_num_atoms=frag1_num_atoms,
-                                        frag2_num_atoms=frag2_num_atoms,
-                                        complex_num_atoms=complex_num_atoms,
-                                        neighbor_cutoff=neighbor_cutoff,
-                                        max_num_neighbors=max_num_neighbors,
-                                        batch_size=64)
-  else:
-    raise ValueError("Featurizer not supported")
-
-  if subset == "general_PL":
-    if shard_size is None:
-      shard_size = 4096
-
-  def get_shards(inputs, shard_size):
-    if shard_size is None:
-      yield inputs
-    else:
-      assert isinstance(shard_size, int) and 0 < shard_size <= len(inputs)
-      print("About to start loading files.\n")
-      for shard_ind in range(len(inputs) // shard_size + 1):
-        if (shard_ind + 1) * shard_size < len(inputs):
-          print("Loading shard %d of size %s." %
-                (shard_ind + 1, str(shard_size)))
-          yield inputs[shard_ind * shard_size:(shard_ind + 1) * shard_size]
+    # Featurize Data
+    if featurizer == "grid":
+      featurizer = rgf.RdkitGridFeaturizer(voxel_width=2.0,
+                                           feature_types=[
+                                               'ecfp', 'splif', 'hbond',
+                                               'salt_bridge', 'pi_stack',
+                                               'cation_pi', 'charge'
+                                           ],
+                                           flatten=True)
+    elif featurizer == "atomic" or featurizer == "atomic_conv":
+      # Pulled from PDB files. For larger datasets with more PDBs, would use
+      # max num atoms instead of exact.
+      frag1_num_atoms = 70  # for ligand atoms
+      if load_binding_pocket:
+        frag2_num_atoms = 1000
+        complex_num_atoms = 1070
       else:
-        print("\nLoading shard %d of size %s." %
-              (shard_ind + 1, str(len(inputs) % shard_size)))
-        yield inputs[shard_ind * shard_size:len(inputs)]
+        frag2_num_atoms = 24000  # for protein atoms
+        complex_num_atoms = 24070  # in total
+      max_num_neighbors = 4
+      # Cutoff in angstroms
+      neighbor_cutoff = 4
+      if featurizer == "atomic":
+        featurizer = ComplexNeighborListFragmentAtomicCoordinates(
+            frag1_num_atoms=frag1_num_atoms,
+            frag2_num_atoms=frag2_num_atoms,
+            complex_num_atoms=complex_num_atoms,
+            max_num_neighbors=max_num_neighbors,
+            neighbor_cutoff=neighbor_cutoff)
+      if featurizer == "atomic_conv":
+        featurizer = AtomicConvFeaturizer(labels=labels,
+                                          frag1_num_atoms=frag1_num_atoms,
+                                          frag2_num_atoms=frag2_num_atoms,
+                                          complex_num_atoms=complex_num_atoms,
+                                          neighbor_cutoff=neighbor_cutoff,
+                                          max_num_neighbors=max_num_neighbors,
+                                          batch_size=64)
+    else:
+      raise ValueError("Featurizer %s not supported" % (featurizer))
 
-  def shard_generator(inputs, shard_size):
-    for shard_num, shard in enumerate(get_shards(inputs, shard_size)):
-      time1 = time.time()
-      ligand_files, protein_files, labels, pdbs = zip(*shard)
-      features, failures = featurizer.featurize_complexes(
-          ligand_files, protein_files)
-      labels = np.delete(labels, failures)
-      labels = labels.reshape((len(labels), 1))
-      weight = np.ones_like(labels)
-      ids = np.delete(pdbs, failures)
-      assert len(features) == len(labels) == len(weight) == len(ids)
-      time2 = time.time()
-      print("[%s] Featurizing shard %d took %0.3f s\n" % (time.strftime(
-          "%Y-%m-%d %H:%M:%S", time.localtime()), shard_num, time2 - time1))
-      yield features, labels, weight, ids
+    def get_shards(inputs, shard_size):
+      if len(inputs) <= shard_size:
+        yield inputs
+      else:
+        assert isinstance(shard_size, int) and 0 < shard_size <= len(inputs)
+        print("About to start loading files.\n")
+        for shard_ind in range(len(inputs) // shard_size + 1):
+          if (shard_ind + 1) * shard_size < len(inputs):
+            print("Loading shard %d of size %s." %
+                  (shard_ind + 1, str(shard_size)))
+            yield inputs[shard_ind * shard_size:(shard_ind + 1) * shard_size]
+        else:
+          print("\nLoading shard %d of size %s." %
+                (shard_ind + 1, str(len(inputs) % shard_size)))
+          yield inputs[shard_ind * shard_size:len(inputs)]
 
-  print(
-      "\n[%s] Featurizing and constructing dataset without failing featurization for"
-      % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-      "\"%s\"\n" % data_folder)
-  feat_t1 = time.time()
-  zipped = list(zip(ligand_files, protein_files, labels, pdbs))
-  dataset = deepchem.data.DiskDataset.create_dataset(shard_generator(
-      zipped, shard_size=shard_size),
-                                                     data_dir=save_folder,
-                                                     tasks=pdbbind_tasks,
-                                                     verbose=True)
-  feat_t2 = time.time()
-  print(
-      "\n[%s] Featurization and construction finished, %0.3f s passed.\n" %
-      (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), feat_t2 - feat_t1))
+    def shard_generator(inputs, shard_size):
+      for shard_num, shard in enumerate(get_shards(inputs, shard_size)):
+        time1 = time.time()
+        ligand_files, protein_files, labels, pdbs = zip(*shard)
+        features, failures = featurizer.featurize_complexes(
+            ligand_files, protein_files)
+        labels = np.delete(labels, failures)
+        labels = labels.reshape((len(labels), 1))
+        weight = np.ones_like(labels)
+        ids = np.delete(pdbs, failures)
+        assert len(features) == len(labels) == len(weight) == len(ids)
+        time2 = time.time()
+        print("[%s] Featurizing shard %d took %0.3f s\n" % (time.strftime(
+            "%Y-%m-%d %H:%M:%S", time.localtime()), shard_num, time2 - time1))
+        yield features, labels, weight, ids
 
-  # No transformations of data
+    print(
+        "\n[%s] Featurizing and constructing dataset without failing featurization for"
+        % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "\"%s\"\n" % data_folder)
+    feat_t1 = time.time()
+    zipped = list(zip(ligand_files, protein_files, labels, pdbs))
+    dataset = deepchem.data.DiskDataset.create_dataset(shard_generator(
+        zipped, shard_size),
+                                                       data_dir=feat_dir,
+                                                       tasks=pdbbind_tasks,
+                                                       verbose=True)
+    feat_t2 = time.time()
+    print("\n[%s] Featurization and construction finished, %0.3f s passed.\n" %
+          (time.strftime("%Y-%m-%d %H:%M:%S",
+                         time.localtime()), feat_t2 - feat_t1))
+
+  # Default: No transformations of data
   if transform:
     transformers = [
-        deepchem.trans.NormalizationTransformer(transform_y=True, dataset=dataset)
+        deepchem.trans.NormalizationTransformer(transform_y=True,
+                                                dataset=dataset)
     ]
   else:
     transformers = []
@@ -958,13 +969,13 @@ def load_pdbbind(reload=True,
       'fp': FingerprintSplitter4Pdbbind(data_folder),
       'mfp': ButinaSplitter4pdbbind(data_folder, reweight=reweight),
       'seq': SequenceSplitter(uclust_file, reweight=reweight),
-      'scaffold':ScaffoldSplitter4pdbbind(data_folder, reweight=reweight),
+      'scaffold': ScaffoldSplitter4pdbbind(data_folder, reweight=reweight),
   }
   splitter = splitters[split]
   train, valid, test = splitter.train_valid_test_split(dataset, seed=split_seed)
 
   all_dataset = (train, valid, test)
-  print("\nSaving dataset to \"%s\" ..." % save_folder)
-  deepchem.utils.save.save_dataset_to_disk(save_folder, train, valid, test,
+  print("\nSaving dataset to \"%s\" ..." % split_dir)
+  deepchem.utils.save.save_dataset_to_disk(split_dir, train, valid, test,
                                            transformers)
   return pdbbind_tasks, all_dataset, transformers
