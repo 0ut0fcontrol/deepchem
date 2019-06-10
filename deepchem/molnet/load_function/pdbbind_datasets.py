@@ -743,10 +743,10 @@ def load_pdbbind(reload=True,
   if save_dir == None:
     save_dir = deepchem_dir
   if load_binding_pocket:
-    feat_dir = os.path.join(save_dir, "from-pdbbind",
+    feat_dir = os.path.join(save_dir, "feat-pdbbind", "v" + version,
                             "protein_pocket-%s-%s" % (subset, featurizer))
   else:
-    feat_dir = os.path.join(save_dir, "from-pdbbind",
+    feat_dir = os.path.join(save_dir, "feat-pdbbind", "v" + version,
                             "full_protein-%s-%s" % (subset, featurizer))
 
   if save_timestamp:
