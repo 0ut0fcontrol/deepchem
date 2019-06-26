@@ -830,8 +830,7 @@ def load_pdbbind(reload=True,
       pdbs = [line[:4] for line in g.readlines() if line[0] != "#"]
     if load_binding_pocket:
       protein_files = [
-          # os.path.join(data_folder, pdb, "%s_pocket.pdb" % pdb) for pdb in pdbs
-          os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
+          os.path.join(data_folder, pdb, "%s_pocket.pdb" % pdb) for pdb in pdbs
       ]
     else:
       protein_files = [
