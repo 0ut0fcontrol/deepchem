@@ -760,6 +760,8 @@ def load_pdbbind(reload=True,
       split_dir = os.path.join(feat_dir, split + str(split_seed))
     else:
       split_dir = os.path.join(feat_dir, str(split))
+    if transform:
+      split_dir += '.trans'
     if reload:
       print("\nReloading splitted dataset from:\n%s\n" % split_dir)
       loaded, all_dataset, transformers = deepchem.utils.save.load_dataset_from_disk(
