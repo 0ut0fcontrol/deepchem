@@ -17,7 +17,7 @@ import deepchem as dc
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-max_epoch", type=int, default=100)
-parser.add_argument("-patience", type=int, default=20)
+parser.add_argument("-patience", type=int, default=3)
 parser.add_argument("-version", default='2015')
 parser.add_argument("-subset", default='core')
 parser.add_argument("-component", default='binding')
@@ -31,9 +31,9 @@ parser.add_argument("-feat_only", action='store_true')
 parser.add_argument("-timestamp", action='store_true')
 args = parser.parse_args()
 
+# np seed for split only
 np.random.seed(args.seed)
-# tf seed not work !!
-
+# tf seed not work, every training will different.
 tf.set_random_seed(args.seed)
 
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
@@ -115,7 +115,6 @@ def copy_checkpoint(source, target='best_checkpoint'):
 best_checkpoint = None
 for i in range(args.max_epoch):
   model.fit(train_dataset, nb_epoch=1)
-  # model.fit(train_dataset, nb_epoch=1)
 
   print("Evaluating model at {} epoch".format(i + 1))
   valid_scores = valid_evaluator.compute_model_performance(metrics)
