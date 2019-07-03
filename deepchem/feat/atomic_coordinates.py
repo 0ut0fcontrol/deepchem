@@ -215,6 +215,7 @@ class ComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
                complex_num_atoms,
                max_num_neighbors,
                neighbor_cutoff,
+               split_complex=False,
                strip_hydrogens=True):
     self.frag1_num_atoms = frag1_num_atoms
     self.frag2_num_atoms = frag2_num_atoms
@@ -224,6 +225,7 @@ class ComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
     self.strip_hydrogens = strip_hydrogens
     self.neighborlist_featurizer = NeighborListComplexAtomicCoordinates(
         self.max_num_neighbors, self.neighbor_cutoff)
+    self.split_complex = split_complex
 
   def _featurize_complex(self, mol_pdb_file, protein_pdb_file):
     try:
@@ -234,7 +236,8 @@ class ComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
       # TODO: Is there a better handling procedure?
       logging.warning("Some molecules cannot be loaded by Rdkit. Skipping")
       return None
-    system_mol = rdkit_util.merge_molecules(frag1_mol, frag2_mol)
+    system_mol = rdkit_util.merge_molecules(
+        frag1_mol, frag2_mol, split_complex=self.split_complex)
     system_coords = rdkit_util.get_xyz_from_mol(system_mol)
 
     frag1_coords, frag1_mol = self._strip_hydrogens(frag1_coords, frag1_mol)

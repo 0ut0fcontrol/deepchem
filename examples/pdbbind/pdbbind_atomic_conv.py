@@ -29,6 +29,7 @@ parser.add_argument("-reload", action='store_true')
 parser.add_argument("-trans", action='store_true')
 parser.add_argument("-feat_only", action='store_true')
 parser.add_argument("-timestamp", action='store_true')
+parser.add_argument("-split_complex", action='store_true')
 args = parser.parse_args()
 
 # np seed for split only
@@ -42,6 +43,7 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     version=args.version,
     split=args.split,
     split_seed=args.seed,
+    split_complex=args.split_complex,
     subset=args.subset,
     load_binding_pocket=True,
     data_dir=args.data_dir,

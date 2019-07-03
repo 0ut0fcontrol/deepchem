@@ -213,10 +213,16 @@ def merge_molecules_xyz(protein_xyz, ligand_xyz):
   return np.array(np.vstack(np.vstack((protein_xyz, ligand_xyz))))
 
 
-def merge_molecules(ligand, protein):
+def merge_molecules(ligand, protein, split_complex=False):
   """Helper method to merge ligand and protein molecules."""
-  from rdkit.Chem import rdmolops
-  return rdmolops.CombineMols(ligand, protein)
+  from rdkit import Chem
+  from rdkit import Geometry
+  p = Geometry.Point3D(1000, 0, 0)
+  if split_complex:
+    print('split complex')
+    return Chem.CombineMols(ligand, protein, p)
+  else:
+    return Chem.CombineMols(ligand, protein)
 
 
 class PdbqtLigandWriter(object):
