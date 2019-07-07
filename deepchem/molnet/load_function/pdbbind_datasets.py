@@ -701,6 +701,8 @@ def load_pdbbind(reload=True,
                  reweight=True,
                  save_dir=None,
                  transform=False,
+                 same_protein=False,
+                 same_ligand=False,
                  save_timestamp=False):
   """Load raw PDBBind dataset by featurization and split.
 
@@ -839,10 +841,13 @@ def load_pdbbind(reload=True,
       protein_files = [
           os.path.join(data_folder, pdb, "%s_protein.pdb" % pdb) for pdb in pdbs
       ]
+    if same_protein:
+      protein_files = [protein_files[0] for i in protein_files]
     ligand_files = [
         os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
     ]
-
+    if same_ligand:
+      ligand_files = [ligand_files[0] for i in ligand_files]
     # Extract labels
     with open(index_labels_file, "r") as g:
       labels = np.array([

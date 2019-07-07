@@ -28,6 +28,8 @@ parser.add_argument("-data_dir")
 parser.add_argument("-reload", action='store_true')
 parser.add_argument("-trans", action='store_true')
 parser.add_argument("-feat_only", action='store_true')
+parser.add_argument("-same_protein", action='store_true')
+parser.add_argument("-same_ligand", action='store_true')
 parser.add_argument("-timestamp", action='store_true')
 parser.add_argument("-split_complex", action='store_true')
 args = parser.parse_args()
@@ -44,6 +46,8 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     split=args.split,
     split_seed=args.seed,
     split_complex=args.split_complex,
+    same_protein=args.same_protein,
+    same_ligand=args.same_ligand,
     subset=args.subset,
     load_binding_pocket=True,
     data_dir=args.data_dir,
