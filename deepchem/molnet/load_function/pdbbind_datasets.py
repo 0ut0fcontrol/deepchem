@@ -1086,6 +1086,8 @@ def load_pdbbind(reload=True,
     version_suffix = version
   uclust_file = os.path.join(uclust_file_dir,
                              "INDEX_%s_data.%s.uc" % (subset, version_suffix))
+  if split == 'seq' and clust_file:
+    uclust_file = clust_file
   splitters = {
       'index': deepchem.splits.IndexSplitter(),
       'random': deepchem.splits.RandomSplitter(),
