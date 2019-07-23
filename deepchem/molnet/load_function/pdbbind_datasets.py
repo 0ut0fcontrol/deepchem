@@ -43,12 +43,12 @@ def featurize_pdbbind(data_dir=None, feat="grid", subset="core"):
     )
     if not os.path.exists(pdbbind_dir):
       os.system('mkdir ' + pdbbind_dir)
-    deepchem.utils.untargz_file(os.path.join(data_dir, 'core_grid.tar.gz'),
-                                pdbbind_dir)
-    deepchem.utils.untargz_file(os.path.join(data_dir, 'full_grid.tar.gz'),
-                                pdbbind_dir)
-    deepchem.utils.untargz_file(os.path.join(data_dir, 'refined_grid.tar.gz'),
-                                pdbbind_dir)
+    deepchem.utils.untargz_file(
+        os.path.join(data_dir, 'core_grid.tar.gz'), pdbbind_dir)
+    deepchem.utils.untargz_file(
+        os.path.join(data_dir, 'full_grid.tar.gz'), pdbbind_dir)
+    deepchem.utils.untargz_file(
+        os.path.join(data_dir, 'refined_grid.tar.gz'), pdbbind_dir)
 
   return deepchem.data.DiskDataset(dataset_dir), tasks
 
@@ -109,13 +109,12 @@ def load_pdbbind_grid(split="random",
     elif featurizer == 'Raw':
       featurizer = deepchem.feat.RawFeaturizer()
 
-    loader = deepchem.data.CSVLoader(tasks=tasks,
-                                     smiles_field="smiles",
-                                     featurizer=featurizer)
+    loader = deepchem.data.CSVLoader(
+        tasks=tasks, smiles_field="smiles", featurizer=featurizer)
     dataset = loader.featurize(dataset_file, shard_size=8192)
     transformers = [
-        deepchem.trans.NormalizationTransformer(transform_y=True,
-                                                dataset=dataset)
+        deepchem.trans.NormalizationTransformer(
+            transform_y=True, dataset=dataset)
     ]
 
     for transformer in transformers:
@@ -276,13 +275,14 @@ class ButinaSplitter4pdbbind(Splitter):
 
       Returns Dataset objects.
     """
-    train_inds, valid_inds, test_inds = self.split(dataset,
-                                                   seed=seed,
-                                                   frac_train=frac_train,
-                                                   frac_test=frac_test,
-                                                   frac_valid=frac_valid,
-                                                   log_every_n=log_every_n,
-                                                   **kwargs)
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
     import tempfile
     if train_dir is None:
       train_dir = tempfile.mkdtemp()
@@ -429,13 +429,14 @@ class ScaffoldSplitter4pdbbind(Splitter):
 
       Returns Dataset objects.
     """
-    train_inds, valid_inds, test_inds = self.split(dataset,
-                                                   seed=seed,
-                                                   frac_train=frac_train,
-                                                   frac_test=frac_test,
-                                                   frac_valid=frac_valid,
-                                                   log_every_n=log_every_n,
-                                                   **kwargs)
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
     import tempfile
     if train_dir is None:
       train_dir = tempfile.mkdtemp()
@@ -588,13 +589,14 @@ class SequenceSplitter(Splitter):
 
       Returns Dataset objects.
       """
-    train_inds, valid_inds, test_inds = self.split(dataset,
-                                                   seed=seed,
-                                                   frac_train=frac_train,
-                                                   frac_test=frac_test,
-                                                   frac_valid=frac_valid,
-                                                   log_every_n=log_every_n,
-                                                   **kwargs)
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
     import tempfile
     if train_dir is None:
       train_dir = tempfile.mkdtemp()
@@ -688,6 +690,117 @@ class SequenceSplitter(Splitter):
     return train_inds, valid_inds, test_inds
 
 
+class PocketSplitter(Splitter):
+  """
+    Class for doing data splits based on clustering of protein sequence.
+    Need uclust file from UCLUST
+
+    O(N**2) algorithm
+  """
+
+  def __init__(self, clust_file, reweight=True, *args, **kwargs):
+    self.clust_file = clust_file
+    self.reweight = reweight
+    self.ids_weight = {}
+    super(PocketSplitter, self).__init__(*args, **kwargs)
+
+  def train_valid_test_split(self,
+                             dataset,
+                             train_dir=None,
+                             valid_dir=None,
+                             test_dir=None,
+                             frac_train=.8,
+                             frac_valid=.1,
+                             frac_test=.1,
+                             seed=None,
+                             log_every_n=1000,
+                             verbose=True,
+                             **kwargs):
+    """
+      Splits self into train/validation/test sets.
+
+      Returns Dataset objects.
+      """
+    train_inds, valid_inds, test_inds = self.split(
+        dataset,
+        seed=seed,
+        frac_train=frac_train,
+        frac_test=frac_test,
+        frac_valid=frac_valid,
+        log_every_n=log_every_n,
+        **kwargs)
+    import tempfile
+    if train_dir is None:
+      train_dir = tempfile.mkdtemp()
+    if valid_dir is None:
+      valid_dir = tempfile.mkdtemp()
+    if test_dir is None:
+      test_dir = tempfile.mkdtemp()
+
+    def reweight(dataset):
+      print(self.ids_weight)
+
+      def fn(x, y, w, ids):
+        for i, _id in enumerate(ids):
+          w[i][0] = np.float64(self.ids_weight[_id])
+        return x, y, w, ids
+
+      return dataset.transform(fn)
+
+    if self.reweight:
+      dataset = reweight(dataset)
+
+    train_dataset = dataset.select(train_inds, train_dir)
+    if frac_valid != 0:
+      valid_dataset = dataset.select(valid_inds, valid_dir)
+    else:
+      valid_dataset = None
+    test_dataset = dataset.select(test_inds, test_dir)
+
+    return train_dataset, valid_dataset, test_dataset
+
+  def split(self,
+            dataset,
+            seed=None,
+            frac_train=.8,
+            frac_valid=.1,
+            frac_test=.1,
+            log_every_n=1000):
+    """
+      Splits proteins into train/validation/test by sequence clustering.
+    """
+    with open(self.clust_file) as f:
+      import json
+      clust_ids = json.load(f)
+    for clust in clust_ids:
+      for id_ in clust:
+        self.ids_weight[id_] = 1.0 / len(clust)
+
+    dataset_ids = dataset.ids
+    weights = np.ones_like(dataset_ids)
+    for i, id_ in enumerate(dataset_ids):
+      if id_ in self.ids_weight:
+        weights[i] = self.ids_weight[id_]
+      else:
+        self.ids_weight[id_] = 1.0
+
+    # shuffle for not stable sort
+    np.random.seed(seed)
+    shuff_ids = np.random.permutation(len(weights))
+    shuff_ws = weights[shuff_ids]
+    # sort index by weight.
+    inds = shuff_ids[np.argsort(shuff_ws)]
+
+    np.testing.assert_almost_equal(frac_train + frac_valid + frac_test, 1.)
+    data_len = len(dataset)
+    train_cutoff = int(frac_train * data_len)
+    valid_cutoff = int((frac_train + frac_valid) * data_len)
+    train_inds = inds[:train_cutoff]
+    valid_inds = inds[train_cutoff:valid_cutoff]
+    test_inds = inds[valid_cutoff:]
+    return train_inds, valid_inds, test_inds
+
+
 def load_pdbbind(reload=True,
                  data_dir=None,
                  version="2015",
@@ -698,6 +811,7 @@ def load_pdbbind(reload=True,
                  split="random",
                  split_complex=False,
                  split_seed=None,
+                 clust_file=None,
                  reweight=True,
                  save_dir=None,
                  transform=False,
@@ -753,9 +867,9 @@ def load_pdbbind(reload=True,
                             "full_protein-%s-%s" % (subset, featurizer))
 
   if save_timestamp:
-    feat_dir = "%s-%s-%s" % (feat_dir, time.strftime(
-        "%Y%m%d", time.localtime()), re.search(r"\.(.*)", str(
-            time.time())).group(1))
+    feat_dir = "%s-%s-%s" % (feat_dir, time.strftime("%Y%m%d",
+                                                     time.localtime()),
+                             re.search(r"\.(.*)", str(time.time())).group(1))
 
   loaded = False
   if split is not None:
@@ -797,8 +911,8 @@ def load_pdbbind(reload=True,
             dest_dir=data_dir)
 
       print("Untarring full dataset...")
-      deepchem.utils.untargz_file(dataset_file,
-                                  dest_dir=os.path.join(data_dir, "pdbbind"))
+      deepchem.utils.untargz_file(
+          dataset_file, dest_dir=os.path.join(data_dir, "pdbbind"))
 
     print("\nRaw dataset:\n%s" % data_folder)
     print("\nFeaturized dataset:\n%s" % feat_dir)
@@ -814,8 +928,8 @@ def load_pdbbind(reload=True,
         index_labels_file = os.path.join(data_folder, "index",
                                          "INDEX_general_PL_data.2015")
       else:
-        raise ValueError("%s subsets not supported for version %s" %
-                         (subset, version))
+        raise ValueError(
+            "%s subsets not supported for version %s" % (subset, version))
 
     elif version == "2018":
       if subset == "refined":
@@ -825,8 +939,8 @@ def load_pdbbind(reload=True,
         index_labels_file = os.path.join(data_folder, "index",
                                          "INDEX_general_PL_data.2018")
       else:
-        raise ValueError("%s subsets not supported for version %s" %
-                         (subset, version))
+        raise ValueError(
+            "%s subsets not supported for version %s" % (subset, version))
     else:
       raise ValueError("version %s not supported" % (version))
 
@@ -859,13 +973,13 @@ def load_pdbbind(reload=True,
 
     # Featurize Data
     if featurizer == "grid":
-      featurizer = rgf.RdkitGridFeaturizer(voxel_width=2.0,
-                                           feature_types=[
-                                               'ecfp', 'splif', 'hbond',
-                                               'salt_bridge', 'pi_stack',
-                                               'cation_pi', 'charge'
-                                           ],
-                                           flatten=True)
+      featurizer = rgf.RdkitGridFeaturizer(
+          voxel_width=2.0,
+          feature_types=[
+              'ecfp', 'splif', 'hbond', 'salt_bridge', 'pi_stack', 'cation_pi',
+              'charge'
+          ],
+          flatten=True)
     elif featurizer == "atomic" or featurizer == "atomic_conv":
       # Pulled from PDB files. For larger datasets with more PDBs, would use
       # max num atoms instead of exact.
@@ -888,13 +1002,14 @@ def load_pdbbind(reload=True,
             split_complex=split_complex,
             neighbor_cutoff=neighbor_cutoff)
       if featurizer == "atomic_conv":
-        featurizer = AtomicConvFeaturizer(labels=labels,
-                                          frag1_num_atoms=frag1_num_atoms,
-                                          frag2_num_atoms=frag2_num_atoms,
-                                          complex_num_atoms=complex_num_atoms,
-                                          neighbor_cutoff=neighbor_cutoff,
-                                          max_num_neighbors=max_num_neighbors,
-                                          batch_size=64)
+        featurizer = AtomicConvFeaturizer(
+            labels=labels,
+            frag1_num_atoms=frag1_num_atoms,
+            frag2_num_atoms=frag2_num_atoms,
+            complex_num_atoms=complex_num_atoms,
+            neighbor_cutoff=neighbor_cutoff,
+            max_num_neighbors=max_num_neighbors,
+            batch_size=64)
     else:
       raise ValueError("Featurizer %s not supported" % (featurizer))
 
@@ -906,8 +1021,8 @@ def load_pdbbind(reload=True,
         print("About to start loading files.\n")
         for shard_ind in range(len(inputs) // shard_size + 1):
           if (shard_ind + 1) * shard_size < len(inputs):
-            print("Loading shard %d of size %s." %
-                  (shard_ind + 1, str(shard_size)))
+            print("Loading shard %d of size %s." % (shard_ind + 1,
+                                                    str(shard_size)))
             yield inputs[shard_ind * shard_size:(shard_ind + 1) * shard_size]
         else:
           print("\nLoading shard %d of size %s." %
@@ -936,21 +1051,21 @@ def load_pdbbind(reload=True,
         "\"%s\"\n" % data_folder)
     feat_t1 = time.time()
     zipped = list(zip(ligand_files, protein_files, labels, pdbs))
-    dataset = deepchem.data.DiskDataset.create_dataset(shard_generator(
-        zipped, shard_size),
-                                                       data_dir=feat_dir,
-                                                       tasks=pdbbind_tasks,
-                                                       verbose=True)
+    dataset = deepchem.data.DiskDataset.create_dataset(
+        shard_generator(zipped, shard_size),
+        data_dir=feat_dir,
+        tasks=pdbbind_tasks,
+        verbose=True)
     feat_t2 = time.time()
     print("\n[%s] Featurization and construction finished, %0.3f s passed.\n" %
-          (time.strftime("%Y-%m-%d %H:%M:%S",
-                         time.localtime()), feat_t2 - feat_t1))
+          (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+           feat_t2 - feat_t1))
 
   # Default: No transformations of data
   if transform:
     transformers = [
-        deepchem.trans.NormalizationTransformer(transform_y=True,
-                                                dataset=dataset)
+        deepchem.trans.NormalizationTransformer(
+            transform_y=True, dataset=dataset)
     ]
   else:
     transformers = []
@@ -978,6 +1093,7 @@ def load_pdbbind(reload=True,
       'mfp': ButinaSplitter4pdbbind(data_folder, reweight=reweight),
       'seq': SequenceSplitter(uclust_file, reweight=reweight),
       'scaffold': ScaffoldSplitter4pdbbind(data_folder, reweight=reweight),
+      'pocket': PocketSplitter(clust_file, reweight=reweight),
   }
   splitter = splitters[split]
   train, valid, test = splitter.train_valid_test_split(dataset, seed=split_seed)

@@ -23,6 +23,7 @@ parser.add_argument("-subset", default='core')
 parser.add_argument("-component", default='binding')
 parser.add_argument("-split", default='random')
 parser.add_argument("-seed", type=int, default=111)
+parser.add_argument("-clust_file")
 parser.add_argument("-save_dir", default='/tmp')
 parser.add_argument("-data_dir")
 parser.add_argument("-reload", action='store_true')
@@ -45,6 +46,7 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     version=args.version,
     split=args.split,
     split_seed=args.seed,
+    clust_file=args.clust_file,
     split_complex=args.split_complex,
     same_protein=args.same_protein,
     same_ligand=args.same_ligand,
