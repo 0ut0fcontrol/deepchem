@@ -991,8 +991,8 @@ def load_pdbbind(reload=True,
         frag2_num_atoms = 24000  # for protein atoms
         complex_num_atoms = 24070  # in total
       max_num_neighbors = 4
-      # Cutoff in angstroms
-      neighbor_cutoff = 4
+      # Cutoff in nm
+      neighbor_cutoff = 1
       if featurizer == "atomic":
         featurizer = ComplexNeighborListFragmentAtomicCoordinates(
             frag1_num_atoms=frag1_num_atoms,
