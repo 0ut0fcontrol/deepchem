@@ -156,7 +156,7 @@ class AtomicConvScore(Layer):
     elif self.component == 'ligand':
       target_energy = frag1_energy
     elif self.component == 'protein':
-      target_energy = frag2_energy
+      target_energy = complex_energy - frag2_energy
     else:
       raise ValueError('Unkown component {}'.format(self.component))
     self.out_tensor = tf.expand_dims(target_energy, axis=1)
@@ -220,6 +220,7 @@ class AtomicConvModel(TensorGraph):
     self.max_num_neighbors = max_num_neighbors
     self.batch_size = batch_size
     self.atom_types = atom_types
+    self.component = component
 
     rp = [x for x in itertools.product(*radial)]
     self.frag1_X = Feature(shape=(batch_size, frag1_num_atoms, 3))
@@ -236,6 +237,8 @@ class AtomicConvModel(TensorGraph):
         shape=(batch_size, frag2_num_atoms, max_num_neighbors))
     self.frag2_z = Feature(shape=(batch_size, frag2_num_atoms))
 
+    if self.component == 'protein':
+      complex_num_atoms = frag2_num_atoms
     self.complex_X = Feature(shape=(batch_size, complex_num_atoms, 3))
     self.complex_nbrs = Feature(
         shape=(batch_size, complex_num_atoms, max_num_neighbors))
@@ -322,7 +325,6 @@ class AtomicConvModel(TensorGraph):
         complex_X_b = np.zeros((batch_size, N, num_features))
         for i in range(batch_size):
           complex_X_b[i] = F_b[i][6]
-        orig_dict[self.complex_X] = complex_X_b
 
         frag1_Nbrs = np.zeros((batch_size, N_1, M))
         frag1_Z_b = np.zeros((batch_size, N_1))
@@ -368,10 +370,16 @@ class AtomicConvModel(TensorGraph):
             complex_Nbrs[i, atom, :len(atom_nbrs)] = np.array(atom_nbrs)
             for j, atom_j in enumerate(atom_nbrs):
               complex_Nbrs_Z[i, atom, j] = complex_Z_b[i, atom_j]
-
-        orig_dict[self.complex_nbrs] = complex_Nbrs
-        orig_dict[self.complex_nbrs_z] = complex_Nbrs_Z
-        orig_dict[self.complex_z] = complex_Z_b
+        if self.component == 'protein':
+          orig_dict[self.complex_nbrs] = frag2_Nbrs
+          orig_dict[self.complex_nbrs_z] = frag2_Nbrs_Z
+          orig_dict[self.complex_z] = frag2_Z_b
+          orig_dict[self.complex_X] = frag2_X_b
+        else:
+          orig_dict[self.complex_nbrs] = complex_Nbrs
+          orig_dict[self.complex_nbrs_z] = complex_Nbrs_Z
+          orig_dict[self.complex_z] = complex_Z_b
+          orig_dict[self.complex_X] = complex_X_b
         orig_dict[self.label] = np.reshape(y_b, newshape=(batch_size, 1))
         yield orig_dict
 
