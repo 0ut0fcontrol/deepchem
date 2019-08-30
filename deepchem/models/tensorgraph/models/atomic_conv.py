@@ -165,24 +165,22 @@ class AtomicConvScore(Layer):
 
 class AtomicConvModel(TensorGraph):
 
-  def __init__(self,
-               frag1_num_atoms=70,
-               frag2_num_atoms=634,
-               complex_num_atoms=701,
-               max_num_neighbors=12,
-               batch_size=24,
-               atom_types=[
-                   6, 7., 8., 9., 11., 12., 15., 16., 17., 20., 25., 30., 35.,
-                   53., -1.
-               ],
-               radial=[[
-                   1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0,
-                   7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0
-               ], [0.0, 4.0, 8.0], [0.4]],
-               layer_sizes=[32, 32, 16],
-               learning_rate=0.001,
-               component='binding',
-               **kwargs):
+  def __init__(
+      self,
+      frag1_num_atoms=70,
+      frag2_num_atoms=634,
+      complex_num_atoms=701,
+      max_num_neighbors=12,
+      batch_size=24,
+      atom_types=[6, 7, 8, 9, 11, 12, 15, 16, 17, 20, 25, 30, 35, 53, -1],
+      radial=[[
+          1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0,
+          8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0
+      ], [0.0, 4.0, 8.0], [0.4]],
+      layer_sizes=[32, 32, 16],
+      learning_rate=0.001,
+      component='binding',
+      **kwargs):
     """Implements an Atomic Convolution Model.
 
     Implements the atomic convolutional networks as introduced in
@@ -309,77 +307,71 @@ class AtomicConvModel(TensorGraph):
         N_2 = frag2_num_atoms
         M = max_num_neighbors
 
-        orig_dict = {}
-        batch_size = F_b.shape[0]
-        num_features = F_b[0][0].shape[1]
-        frag1_X_b = np.zeros((batch_size, N_1, num_features))
-        for i in range(batch_size):
-          frag1_X_b[i] = F_b[i][0]
-        orig_dict[self.frag1_X] = frag1_X_b
+        # from batch_size x 3 x 4 to 3 x 4 x batch_size
+        frag1, frag2, complex_ = np.transpose(F_b, axes=[1, 2, 0])
+        frag1_Mol, frag1_X, frag1_Nbrs_dict, frag1_Z = frag1
+        frag2_Mol, frag2_X, frag2_Nbrs_dict, frag2_Z = frag2
+        complex_Mol, complex_X, complex_Nbrs_dict, complex_Z = complex_
 
-        frag2_X_b = np.zeros((batch_size, N_2, num_features))
-        for i in range(batch_size):
-          frag2_X_b[i] = F_b[i][3]
-        orig_dict[self.frag2_X] = frag2_X_b
-
-        complex_X_b = np.zeros((batch_size, N, num_features))
-        for i in range(batch_size):
-          complex_X_b[i] = F_b[i][6]
+        # vstack convert list of array objects into 2D array
+        frag1_Z = np.vstack(frag1_Z)
+        frag2_Z = np.vstack(frag2_Z)
+        complex_Z = np.vstack(complex_Z)
+        frag1_Z[np.isin(frag1_Z, self.atom_types, invert=True)] = -1
+        frag2_Z[np.isin(frag2_Z, self.atom_types, invert=True)] = -1
+        complex_Z[np.isin(complex_Z, self.atom_types, invert=True)] = -1
 
         frag1_Nbrs = np.zeros((batch_size, N_1, M))
-        frag1_Z_b = np.zeros((batch_size, N_1))
-        for i in range(batch_size):
-          z = replace_atom_types(F_b[i][2])
-          frag1_Z_b[i] = z
         frag1_Nbrs_Z = np.zeros((batch_size, N_1, M))
-        for atom in range(N_1):
-          for i in range(batch_size):
-            atom_nbrs = F_b[i][1].get(atom, "")
-            frag1_Nbrs[i, atom, :len(atom_nbrs)] = np.array(atom_nbrs)
-            for j, atom_j in enumerate(atom_nbrs):
-              frag1_Nbrs_Z[i, atom, j] = frag1_Z_b[i, atom_j]
-        orig_dict[self.frag1_nbrs] = frag1_Nbrs
-        orig_dict[self.frag1_nbrs_z] = frag1_Nbrs_Z
-        orig_dict[self.frag1_z] = frag1_Z_b
+        for i in range(batch_size):
+          for idx, nbr_idxs in frag1_Nbrs_dict[i].items():
+            n = len(nbr_idxs)
+            frag1_Nbrs[i, idx, :n] = nbr_idxs
+            frag1_Nbrs_Z[i, idx, :n] = frag1_Z[i, nbr_idxs]
 
         frag2_Nbrs = np.zeros((batch_size, N_2, M))
-        frag2_Z_b = np.zeros((batch_size, N_2))
-        for i in range(batch_size):
-          z = replace_atom_types(F_b[i][5])
-          frag2_Z_b[i] = z
         frag2_Nbrs_Z = np.zeros((batch_size, N_2, M))
-        for atom in range(N_2):
-          for i in range(batch_size):
-            atom_nbrs = F_b[i][4].get(atom, "")
-            frag2_Nbrs[i, atom, :len(atom_nbrs)] = np.array(atom_nbrs)
-            for j, atom_j in enumerate(atom_nbrs):
-              frag2_Nbrs_Z[i, atom, j] = frag2_Z_b[i, atom_j]
-        orig_dict[self.frag2_nbrs] = frag2_Nbrs
-        orig_dict[self.frag2_nbrs_z] = frag2_Nbrs_Z
-        orig_dict[self.frag2_z] = frag2_Z_b
+        for i in range(batch_size):
+          for idx, nbr_idxs in frag2_Nbrs_dict[i].items():
+            n = len(nbr_idxs)
+            frag2_Nbrs[i, idx, :n] = nbr_idxs
+            frag2_Nbrs_Z[i, idx, :n] = frag2_Z[i, nbr_idxs]
 
         complex_Nbrs = np.zeros((batch_size, N, M))
-        complex_Z_b = np.zeros((batch_size, N))
-        for i in range(batch_size):
-          z = replace_atom_types(F_b[i][8])
-          complex_Z_b[i] = z
         complex_Nbrs_Z = np.zeros((batch_size, N, M))
-        for atom in range(N):
-          for i in range(batch_size):
-            atom_nbrs = F_b[i][7].get(atom, "")
-            complex_Nbrs[i, atom, :len(atom_nbrs)] = np.array(atom_nbrs)
-            for j, atom_j in enumerate(atom_nbrs):
-              complex_Nbrs_Z[i, atom, j] = complex_Z_b[i, atom_j]
+        for i in range(batch_size):
+          for idx, nbr_idxs in complex_Nbrs_dict[i].items():
+            n = len(nbr_idxs)
+            complex_Nbrs[i, idx, :n] = nbr_idxs
+            complex_Nbrs_Z[i, idx, :n] = complex_Z[i, nbr_idxs]
+
+        # vstack convert list of array objects into 2D (batch_size*N, 3) array
+        # need reshape
+        frag1_X = np.vstack(frag1_X).reshape(batch_size, N_1, 3)
+        frag2_X = np.vstack(frag2_X).reshape(batch_size, N_2, 3)
+        complex_X = np.vstack(complex_X).reshape(batch_size, N, 3)
+
+        orig_dict = {}
+        orig_dict[self.frag1_X] = frag1_X
+        orig_dict[self.frag1_nbrs] = frag1_Nbrs
+        orig_dict[self.frag1_nbrs_z] = frag1_Nbrs_Z
+        orig_dict[self.frag1_z] = frag1_Z
+
+        orig_dict[self.frag2_X] = frag2_X
+        orig_dict[self.frag2_nbrs] = frag2_Nbrs
+        orig_dict[self.frag2_nbrs_z] = frag2_Nbrs_Z
+        orig_dict[self.frag2_z] = frag2_Z
+
         if self.component == 'protein':
+          orig_dict[self.complex_X] = frag2_X
           orig_dict[self.complex_nbrs] = frag2_Nbrs
           orig_dict[self.complex_nbrs_z] = frag2_Nbrs_Z
-          orig_dict[self.complex_z] = frag2_Z_b
-          orig_dict[self.complex_X] = frag2_X_b
+          orig_dict[self.complex_z] = frag2_Z
         else:
+          orig_dict[self.complex_X] =complex_X
           orig_dict[self.complex_nbrs] = complex_Nbrs
           orig_dict[self.complex_nbrs_z] = complex_Nbrs_Z
-          orig_dict[self.complex_z] = complex_Z_b
-          orig_dict[self.complex_X] = complex_X_b
+          orig_dict[self.complex_z] = complex_Z
         orig_dict[self.label] = np.reshape(y_b, newshape=(batch_size, 1))
         yield orig_dict
 
