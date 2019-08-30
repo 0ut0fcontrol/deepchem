@@ -40,10 +40,17 @@ np.random.seed(args.seed)
 # tf seed not work, every training will different.
 tf.set_random_seed(args.seed)
 
+frag1_num_atoms = 350  # for ligand atoms with Hs.
+# frag2_num_atoms = 24000  # for protein atoms
+frag2_num_atoms = 1350  # for pocket atoms wihtout Hs
+complex_num_atoms = frag1_num_atoms + frag2_num_atoms
+
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     reload=args.reload,
     featurizer="atomic",
     version=args.version,
+    frag1_num_atoms=frag1_num_atoms,
+    frag2_num_atoms=frag2_num_atoms,
     split=args.split,
     split_seed=args.seed,
     clust_file=args.clust_file,
@@ -71,10 +78,6 @@ metrics = [
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 batch_size = 16
-frag1_num_atoms = 70  # for ligand atoms
-# frag2_num_atoms = 24000  # for protein atoms
-frag2_num_atoms = 1000  # for pocket atoms
-complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
 # [[Rc],[Rs], [Re]], Rc is cutoff, Rs is mean, Re is variance.
 default_radial = [[

@@ -309,3 +309,101 @@ class ComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
     mol = MoleculeShim(atomic_numbers)
     coords = coords[indexes_to_keep]
     return coords, mol
+
+
+class SimpleComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
+  """This class computes the featurization that corresponds to AtomicConvModel.
+
+  This class computes featurizations needed for AtomicConvModel. Given a
+  two molecular structures, it computes a number of useful geometric
+  features. In particular, for each molecule and the global complex, it
+  computes a coordinates matrix of size (N_atoms, 3) where N_atoms is the
+  number of atoms. It also computes a neighbor-list, a dictionary with
+  N_atoms elements where neighbor-list[i] is a list of the atoms the i-th
+  atom has as neighbors. In addition, it computes a z-matrix for the
+  molecule which is an array of shape (N_atoms,) that contains the atomic
+  number of that atom.
+
+  Since the featurization computes these three quantities for each of the
+  two molecules and the complex, a total of 9 quantities are returned for
+  each complex. Note that for efficiency, fragments of the molecules can be
+  provided rather than the full molecules themselves.
+  """
+
+  def __init__(self,
+               frag1_num_atoms,
+               frag2_num_atoms,
+               complex_num_atoms,
+               max_num_neighbors,
+               neighbor_cutoff,
+               split_complex=False,
+               strip_hydrogens=True):
+    self.frag1_num_atoms = frag1_num_atoms
+    self.frag2_num_atoms = frag2_num_atoms
+    self.complex_num_atoms = complex_num_atoms
+    self.max_num_neighbors = max_num_neighbors
+    self.neighbor_cutoff = neighbor_cutoff
+    self.strip_hydrogens = strip_hydrogens
+    self.neighborlist_featurizer = NeighborListComplexAtomicCoordinates(
+        self.max_num_neighbors, self.neighbor_cutoff)
+    self.split_complex = split_complex
+
+  def _featurize_complex(self, mol_pdb_file, protein_pdb_file):
+    try:
+      frag1_coords, frag1_mol = rdkit_util.load_molecule(
+          mol_pdb_file,
+          add_hydrogens=False,
+          calc_charges=False,
+          remove_hydrogens=False,
+          sanitize=False,
+          robust_sanitize=False,
+      )
+      frag2_coords, frag2_mol = rdkit_util.load_molecule(
+          protein_pdb_file,
+          add_hydrogens=False,
+          calc_charges=False,
+          remove_hydrogens=False,
+          sanitize=False,
+          robust_sanitize=True, # delete can not sanitize atoms.
+      )
+    except MoleculeLoadException:
+      # Currently handles loading failures by returning None
+      # TODO: Is there a better handling procedure?
+      logging.warning("Some molecules cannot be loaded by Rdkit. Skipping")
+      return None
+    system_mol = rdkit_util.merge_molecules(
+        frag1_mol, frag2_mol, split_complex=self.split_complex)
+    system_coords = rdkit_util.get_xyz_from_mol(system_mol)
+    try:
+      frag1_coords, frag1_neighbor_list, frag1_z = self.featurize_mol(
+          frag1_coords, frag1_mol, self.frag1_num_atoms)
+
+      frag2_coords, frag2_neighbor_list, frag2_z = self.featurize_mol(
+          frag2_coords, frag2_mol, self.frag2_num_atoms)
+
+      system_coords, system_neighbor_list, system_z = self.featurize_mol(
+          system_coords, system_mol, self.complex_num_atoms)
+    except ValueError as e:
+      logging.warning(e)
+      logging.warning(
+          "max_atoms was set too low. Some complexes too large and skipped")
+      return None
+
+    return (frag1_mol, frag1_coords, frag1_neighbor_list, frag1_z), (frag2_mol, frag2_coords, frag2_neighbor_list, frag2_z), \
+           (system_mol, system_coords, system_neighbor_list, system_z)
+
+  def get_Z_matrix(self, mol, max_atoms):
+    if len(mol.GetAtoms()) > max_atoms:
+      raise ValueError(f"A molecule (#atoms = {len(mol.GetAtoms())}) is larger than permitted by max_atoms. "
+                       "Increase max_atoms and try again.")
+    return pad_array(
+        np.array([atom.GetAtomicNum() for atom in mol.GetAtoms()]), max_atoms)
+
+  def featurize_mol(self, coords, mol, max_num_atoms):
+    logging.info("Featurizing molecule of size: %d", len(mol.GetAtoms()))
+    neighbor_list = compute_neighbor_list(coords, self.neighbor_cutoff,
+                                          self.max_num_neighbors, None)
+    z = self.get_Z_matrix(mol, max_num_atoms)
+    z = pad_array(z, max_num_atoms)
+    coords = pad_array(coords, (max_num_atoms, 3))
+    return coords, neighbor_list, z

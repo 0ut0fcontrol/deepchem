@@ -91,10 +91,47 @@ def compute_charges(mol):
   return mol
 
 
-def load_molecule(molecule_file,
-                  add_hydrogens=True,
-                  calc_charges=True,
-                  sanitize=False):
+def RobustSanitizeMol(mol):
+  """delete bad atom from mol
+  """
+  import re
+  import sys
+  from rdkit import Chem
+  num = mol.GetNumAtoms()
+  Chem.WrapLogs()
+  stderr = sys.stderr
+  for i in range(10):
+    err = sys.stderr = StringIO()
+    check = Chem.SanitizeMol(mol, catchErrors=True)
+    if check == 0:
+      break
+    idx = re.findall("# (\d+)", err.getvalue())
+    idx = int(idx[0])
+    bad = mol.GetAtomWithIdx(idx)
+    bad.SetAtomicNum(0)
+    for n in bad.GetNeighbors():
+      if n.GetAtomicNum() == 1:
+        n.SetAtomicNum(0)
+    mol = Chem.DeleteSubstructs(mol, Chem.MolFromSmarts('[#0]'))
+  sys.stderr = stderr
+  diff = num - mol.GetNumAtoms()
+  if check == 0:
+    if diff > 0:
+      logging.warning(f"delete {diff}/{num} atoms for RobustSanitizeMol.")
+    return mol
+  else:
+    logging.warning("fail at RobustSanitizeMol().")
+    return None
+
+
+def load_molecule(
+    molecule_file,
+    sanitize=False,
+    robust_sanitize=False,
+    remove_hydrogens=False,
+    add_hydrogens=True,
+    calc_charges=True,
+):
   """
   Converts molecule file to (xyz-coords, obmol object)
 
@@ -121,6 +158,13 @@ def load_molecule(molecule_file,
   else:
     raise ValueError("Unrecognized file type")
 
+  if robust_sanitize:
+    my_mol = RobustSanitizeMol(my_mol)
+  if sanitize:
+    Chem.SanitizeMol(my_mol)
+  if remove_hydrogens:
+    # remove hydrogens need sanitization.
+    my_mol = Chem.RemoveHs(my_mol)
   if my_mol is None:
     raise ValueError("Unable to read non None Molecule Object")
 
@@ -128,11 +172,8 @@ def load_molecule(molecule_file,
     my_mol = add_hydrogens_to_mol(my_mol)
   # TODO: mol should be always sanitized when charges are calculated
   # can't change it now because it would break a lot of examples
-  if sanitize:
-    Chem.SanitizeMol(my_mol)
   if calc_charges:
     compute_charges(my_mol)
-
   xyz = get_xyz_from_mol(my_mol)
 
   return xyz, my_mol

@@ -17,6 +17,7 @@ import pandas as pd
 import tarfile
 from deepchem.feat import rdkit_grid_featurizer as rgf
 from deepchem.feat.atomic_coordinates import ComplexNeighborListFragmentAtomicCoordinates
+from deepchem.feat.atomic_coordinates import SimpleComplexNeighborListFragmentAtomicCoordinates
 from deepchem.feat.graph_features import AtomicConvFeaturizer
 from deepchem.splits import FingerprintSplitter
 from deepchem.splits import Splitter
@@ -805,8 +806,10 @@ def load_pdbbind(reload=True,
                  data_dir=None,
                  version="2015",
                  subset="core",
+                 frag1_num_atoms=350,
+                 frag2_num_atoms=1350,
                  shard_size=4096,
-                 load_binding_pocket=False,
+                 load_binding_pocket=True,
                  featurizer="grid",
                  split="random",
                  split_complex=False,
@@ -983,18 +986,19 @@ def load_pdbbind(reload=True,
     elif featurizer == "atomic" or featurizer == "atomic_conv":
       # Pulled from PDB files. For larger datasets with more PDBs, would use
       # max num atoms instead of exact.
-      frag1_num_atoms = 70  # for ligand atoms
-      if load_binding_pocket:
-        frag2_num_atoms = 1000
-        complex_num_atoms = 1070
-      else:
-        frag2_num_atoms = 24000  # for protein atoms
-        complex_num_atoms = 24070  # in total
+      # frag1_num_atoms = 70  # for ligand atoms
+      # if load_binding_pocket:
+      #   frag2_num_atoms = 1000
+      #   complex_num_atoms = 1070
+      # else:
+      #   frag2_num_atoms = 24000  # for protein atoms
+      #   complex_num_atoms = 24070  # in total
+      complex_num_atoms = frag1_num_atoms + frag2_num_atoms
       max_num_neighbors = 4
-      # Cutoff in nm
-      neighbor_cutoff = 1
+      # Cutoff in Angstrom? but mdtraj use nm as default
+      neighbor_cutoff = 4
       if featurizer == "atomic":
-        featurizer = ComplexNeighborListFragmentAtomicCoordinates(
+        featurizer = SimpleComplexNeighborListFragmentAtomicCoordinates(
             frag1_num_atoms=frag1_num_atoms,
             frag2_num_atoms=frag2_num_atoms,
             complex_num_atoms=complex_num_atoms,
@@ -1056,6 +1060,8 @@ def load_pdbbind(reload=True,
         data_dir=feat_dir,
         tasks=pdbbind_tasks,
         verbose=True)
+
+    print(f"Succeeded to featurize {len(dataset)}/{len(ligand_files)} samples.")
     feat_t2 = time.time()
     print("\n[%s] Featurization and construction finished, %0.3f s passed.\n" %
           (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
