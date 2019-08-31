@@ -4,7 +4,7 @@ Feature calculations.
 import logging
 import types
 import numpy as np
-import multiprocessing
+import multiprocessing.dummy as multiprocessing # for vscode debug
 
 __author__ = "Steven Kearnes"
 __copyright__ = "Copyright 2014, Stanford University"
