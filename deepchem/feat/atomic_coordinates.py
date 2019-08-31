@@ -362,7 +362,7 @@ class SimpleComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
           protein_pdb_file,
           add_hydrogens=False,
           calc_charges=False,
-          remove_hydrogens=False,
+          remove_hydrogens=True,
           sanitize=False,
           robust_sanitize=True, # delete can not sanitize atoms.
       )

@@ -40,9 +40,10 @@ np.random.seed(args.seed)
 # tf seed not work, every training will different.
 tf.set_random_seed(args.seed)
 
-frag1_num_atoms = 350  # for ligand atoms with Hs.
+frag1_num_atoms = 368  # for ligand atoms with Hs.
+frag2_num_atoms = 1067  # for pocket atoms without Hs
+# frag2_num_atoms = 1350  # for pocket atoms with Hs
 # frag2_num_atoms = 24000  # for protein atoms
-frag2_num_atoms = 1350  # for pocket atoms wihtout Hs
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
@@ -79,6 +80,10 @@ config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 batch_size = 16
 
+# default
+# atom_types=[6, 7, 8, 9, 11, 12, 15, 16, 17, 20, 25, 30, 35, 53, -1]
+atom_types=[1, 6, 7, 8, 9, 12, 15, 16, 17, 20, 25, 30, 35, 53, -1]
+
 # [[Rc],[Rs], [Re]], Rc is cutoff, Rs is mean, Re is variance.
 default_radial = [[
     1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5,
@@ -88,6 +93,7 @@ default_radial = [[
 min_radial = [[1.0, 2.0, 3.0, 4.0, 5.0],[0.0, 2.0, 4.0],[0.4]]
 model = dc.models.AtomicConvModel(
     batch_size=batch_size,
+    atom_types=atom_types,
     max_num_neighbors=4,
     radial=min_radial,
     frag1_num_atoms=frag1_num_atoms,
