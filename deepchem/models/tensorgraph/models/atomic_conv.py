@@ -154,7 +154,7 @@ class AtomicConvScore(Layer):
     elif self.component == 'complex':
       target_energy = complex_energy
     elif self.component == 'ligand':
-      target_energy = frag1_energy
+      target_energy = complex_energy - frag1_energy
     elif self.component == 'protein':
       target_energy = complex_energy - frag2_energy
     else:
@@ -237,6 +237,8 @@ class AtomicConvModel(TensorGraph):
 
     if self.component == 'protein':
       complex_num_atoms = frag2_num_atoms
+    if self.component == 'ligand':
+      complex_num_atoms = frag1_num_atoms
     self.complex_X = Feature(shape=(batch_size, complex_num_atoms, 3))
     self.complex_nbrs = Feature(
         shape=(batch_size, complex_num_atoms, max_num_neighbors))
@@ -367,6 +369,11 @@ class AtomicConvModel(TensorGraph):
           orig_dict[self.complex_nbrs] = frag2_Nbrs
           orig_dict[self.complex_nbrs_z] = frag2_Nbrs_Z
           orig_dict[self.complex_z] = frag2_Z
+        elif self.component == 'ligand':
+          orig_dict[self.complex_X] = frag1_X
+          orig_dict[self.complex_nbrs] = frag1_Nbrs
+          orig_dict[self.complex_nbrs_z] = frag1_Nbrs_Z
+          orig_dict[self.complex_z] = frag1_Z
         else:
           orig_dict[self.complex_X] =complex_X
           orig_dict[self.complex_nbrs] = complex_Nbrs
