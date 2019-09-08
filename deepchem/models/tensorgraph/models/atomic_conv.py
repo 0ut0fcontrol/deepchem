@@ -178,7 +178,6 @@ class AtomicConvModel(TensorGraph):
           8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0
       ], [0.0, 4.0, 8.0], [0.4]],
       layer_sizes=[32, 32, 16],
-      learning_rate=0.001,
       component='binding',
       **kwargs):
     """Implements an Atomic Convolution Model.
@@ -303,7 +302,8 @@ class AtomicConvModel(TensorGraph):
     for epoch in range(epochs):
       for ind, (F_b, y_b, w_b, ids_b) in enumerate(
           dataset.iterbatches(
-              batch_size, deterministic=True, pad_batches=pad_batches)):
+              batch_size, deterministic=deterministic,
+              pad_batches=pad_batches)):
         N = complex_num_atoms
         N_1 = frag1_num_atoms
         N_2 = frag2_num_atoms
@@ -375,7 +375,7 @@ class AtomicConvModel(TensorGraph):
           orig_dict[self.complex_nbrs_z] = frag1_Nbrs_Z
           orig_dict[self.complex_z] = frag1_Z
         else:
-          orig_dict[self.complex_X] =complex_X
+          orig_dict[self.complex_X] = complex_X
           orig_dict[self.complex_nbrs] = complex_Nbrs
           orig_dict[self.complex_nbrs_z] = complex_Nbrs_Z
           orig_dict[self.complex_z] = complex_Z

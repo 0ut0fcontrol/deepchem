@@ -809,7 +809,6 @@ def load_pdbbind(reload=True,
                  frag1_num_atoms=350,
                  frag2_num_atoms=1350,
                  shard_size=4096,
-                 shuffle=False,
                  load_binding_pocket=True,
                  featurizer="grid",
                  split="random",
@@ -1056,9 +1055,6 @@ def load_pdbbind(reload=True,
         "\"%s\"\n" % data_folder)
     feat_t1 = time.time()
     zipped = list(zip(ligand_files, protein_files, labels, pdbs))
-    if shuffle:
-      import random
-      random.shuffle(zipped)
     dataset = deepchem.data.DiskDataset.create_dataset(
         shard_generator(zipped, shard_size),
         data_dir=feat_dir,

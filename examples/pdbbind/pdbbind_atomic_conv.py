@@ -18,7 +18,7 @@ from datetime import datetime as dt
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-max_epoch", type=int, default=100)
-parser.add_argument("-patience", type=int, default=3)
+parser.add_argument("-patience", type=int, default=5)
 parser.add_argument("-version", default='2015')
 parser.add_argument("-subset", default='core')
 parser.add_argument(
@@ -28,10 +28,12 @@ parser.add_argument("-remove_ids", help="ids need to remove from training set")
 parser.add_argument("-component", default='binding')
 parser.add_argument("-split", default='random')
 parser.add_argument("-seed", type=int, default=111)
+parser.add_argument("-batch_size", type=int, default=16)
 parser.add_argument("-clust_file")
 parser.add_argument("-save_dir", default='/tmp')
 parser.add_argument("-data_dir")
 parser.add_argument("-reload", action='store_true')
+parser.add_argument("-shuffle", action='store_true')
 parser.add_argument("-trans", action='store_true')
 parser.add_argument("-feat_only", action='store_true')
 parser.add_argument("-same_protein", action='store_true')
@@ -83,7 +85,6 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     frag1_num_atoms=frag1_num_atoms,
     frag2_num_atoms=frag2_num_atoms,
     shard_size=1024,
-    shuffle=True,
     split=args.split,
     split_seed=args.seed,
     clust_file=args.clust_file,
@@ -124,6 +125,14 @@ if args.test is not None:
 else:
   train_dataset, valid_dataset, test_dataset = pdbbind_datasets
 
+# transformers = [
+#     dc.trans.NormalizationTransformer(transform_y=True, dataset=train_dataset)
+# ]
+# for transformer in transformers:
+#   train_dataset = transformer.transform(train_dataset)
+#   valid_dataset = transformer.transform(valid_dataset)
+#   test_dataset = transformer.transform(test_dataset)
+
 metrics = [
     dc.metrics.Metric(dc.metrics.pearson_r2_score),
     dc.metrics.Metric(dc.metrics.mean_absolute_error)
@@ -131,7 +140,6 @@ metrics = [
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
-batch_size = 16
 
 # default
 # atom_types=[6, 7, 8, 9, 11, 12, 15, 16, 17, 20, 25, 30, 35, 53, -1]
@@ -145,7 +153,7 @@ default_radial = [[
 
 min_radial = [[1.0, 2.0, 3.0, 4.0, 5.0], [0.0, 2.0, 4.0], [0.4]]
 model = dc.models.AtomicConvModel(
-    batch_size=batch_size,
+    batch_size=args.batch_size,
     atom_types=atom_types,
     max_num_neighbors=4,
     radial=min_radial,
@@ -153,18 +161,9 @@ model = dc.models.AtomicConvModel(
     frag2_num_atoms=frag2_num_atoms,
     complex_num_atoms=complex_num_atoms,
     component=args.component,
+    learning_rate=0.001,
     configproto=config,
 )
-
-train_y = train_dataset.y
-valid_y = valid_dataset.y
-test_y = test_dataset.y
-if args.trans:
-  for transformer in reversed(transformers):
-    if transformer.transform_y:
-      train_y = transformer.untransform(train_y)
-      valid_y = transformer.untransform(valid_y)
-      test_y = transformer.untransform(test_y)
 
 # Fit trained model
 print("Fitting model on train dataset")
@@ -192,14 +191,19 @@ def copy_checkpoint(source, target='best_checkpoint'):
   return target
 
 
-best_checkpoint = None
+if args.shuffle:
+  deterministic = False
+else:
+  # samples sorted by pK in PDBbind data set.
+  # curriculum learning https://doi.org/10.1145/1553374.1553380
+  deterministic = True
 for i in range(args.max_epoch):
-  model.fit(train_dataset, nb_epoch=1)
+  model.fit(train_dataset, nb_epoch=1, deterministic=deterministic)
 
   print("Evaluating model at {} epoch".format(i + 1))
   valid_scores = valid_evaluator.compute_model_performance(metrics)
   print("Validation scores")
-  print(valid_scores)
+  print(valid_scores, flush=True)
   if np.isnan(valid_scores['pearson_r2_score']):
     break
   if valid_scores['pearson_r2_score'] < best_r2:
@@ -215,7 +219,7 @@ for i in range(args.max_epoch):
     test_scores = test_evaluator.compute_model_performance(metrics)
     print("Testing scores")
     print(test_scores)
-    print()
+    print(flush=True)
 
 model.restore(checkpoint=best_checkpoint)
 train_scores = train_evaluator.compute_model_performance(
