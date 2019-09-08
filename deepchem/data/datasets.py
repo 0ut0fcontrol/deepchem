@@ -648,7 +648,9 @@ class DiskDataset(Dataset):
   def move(self, new_data_dir):
     """Moves dataset to new directory."""
     files = [os.path.join(self.data_dir, i) for i in os.listdir(self.data_dir)]
-    new_files = [os.path.join(new_data_dir, i) for i in os.listdir(self.data_dir)]
+    new_files = [
+        os.path.join(new_data_dir, i) for i in os.listdir(self.data_dir)
+    ]
     if not os.path.exists(new_data_dir):
       os.makedirs(new_data_dir)
     for i in range(len(files)):
@@ -770,6 +772,7 @@ class DiskDataset(Dataset):
                   batch_size=None,
                   epoch=0,
                   deterministic=False,
+                  shuffle_batches=False,
                   pad_batches=False):
     """ Get an object that iterates over minibatches from the dataset. It is guaranteed
     that the number of batches returned is math.ceil(len(dataset)/batch_size).
@@ -855,14 +858,20 @@ class DiskDataset(Dataset):
           continue
 
         num_local_batches = math.ceil(n_shard_samples / shard_batch_size)
+        if shuffle_batches:
+          local_batch_perm = np.random.permutation(num_local_batches)
+        else:
+          local_batch_perm = np.arange(num_local_batches)
+
         if not deterministic:
           sample_perm = np.random.permutation(n_shard_samples)
         else:
           sample_perm = np.arange(n_shard_samples)
 
         while cur_local_batch < num_local_batches:
-          start = cur_local_batch * shard_batch_size
-          end = min(n_shard_samples, (cur_local_batch + 1) * shard_batch_size)
+          batch_idx = local_batch_perm[cur_local_batch]
+          start = batch_idx * shard_batch_size
+          end = min(n_shard_samples, (batch_idx + 1) * shard_batch_size)
 
           indices = range(start, end)
           perm_indices = sample_perm[indices]

@@ -7,7 +7,7 @@ __license__ = "MIT"
 
 import sys
 
-from deepchem.models.tensorgraph.layers import Layer, Feature, Label, AtomicConvolution, L2Loss, ReduceMean
+from deepchem.models.tensorgraph.layers import Layer, Feature, Label, AtomicConvolution, L2Loss, ReduceMean, Dense
 from deepchem.models import TensorGraph
 
 import numpy as np
@@ -272,7 +272,7 @@ class AtomicConvModel(TensorGraph):
             self.complex_z
         ],
     )
-
+    # score = Dense(1, in_layers=[score])
     self.label = Label(shape=(None, 1))
     loss = ReduceMean(in_layers=L2Loss(in_layers=[score, self.label]))
     self.add_output(score)
@@ -283,6 +283,7 @@ class AtomicConvModel(TensorGraph):
                         epochs=1,
                         predict=False,
                         deterministic=True,
+                        shuffle_batches=False,
                         pad_batches=True):
     complex_num_atoms = self.complex_num_atoms
     frag1_num_atoms = self.frag1_num_atoms
@@ -302,7 +303,9 @@ class AtomicConvModel(TensorGraph):
     for epoch in range(epochs):
       for ind, (F_b, y_b, w_b, ids_b) in enumerate(
           dataset.iterbatches(
-              batch_size, deterministic=deterministic,
+              batch_size,
+              deterministic=deterministic,
+              shuffle_batches=shuffle_batches,
               pad_batches=pad_batches)):
         N = complex_num_atoms
         N_1 = frag1_num_atoms
@@ -381,6 +384,46 @@ class AtomicConvModel(TensorGraph):
           orig_dict[self.complex_z] = complex_Z
         orig_dict[self.label] = np.reshape(y_b, newshape=(batch_size, 1))
         yield orig_dict
+
+  def fit(self,
+          dataset,
+          nb_epoch=10,
+          max_checkpoints_to_keep=5,
+          checkpoint_interval=1000,
+          deterministic=False,
+          shuffle_batches=False,
+          restore=False,
+          submodel=None):
+    """Train this model on a dataset.
+
+    Parameters
+    ----------
+    dataset: Dataset
+      the Dataset to train on
+    nb_epoch: int
+      the number of epochs to train for
+    max_checkpoints_to_keep: int
+      the maximum number of checkpoints to keep.  Older checkpoints are discarded.
+    checkpoint_interval: int
+      the frequency at which to write checkpoints, measured in training steps.
+      Set this to 0 to disable automatic checkpointing.
+    deterministic: bool
+      if True, the samples are processed in order.  If False, a different random
+      order is used for each epoch.
+    restore: bool
+      if True, restore the model from the most recent checkpoint and continue training
+      from there.  If False, retrain the model from scratch.
+    submodel: Submodel
+      an alternate training objective to use.  This should have been created by
+      calling create_submodel().
+    """
+    generator = self.default_generator(
+        dataset,
+        epochs=nb_epoch,
+        deterministic=deterministic,
+        shuffle_batches=shuffle_batches)
+    return self.fit_generator(generator, max_checkpoints_to_keep,
+                              checkpoint_interval, restore, submodel)
 
   def predict(self, dataset, transformers=[], outputs=None):
     """

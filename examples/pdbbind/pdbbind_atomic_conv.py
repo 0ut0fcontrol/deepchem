@@ -33,7 +33,8 @@ parser.add_argument("-clust_file")
 parser.add_argument("-save_dir", default='/tmp')
 parser.add_argument("-data_dir")
 parser.add_argument("-reload", action='store_true')
-parser.add_argument("-shuffle", action='store_true')
+parser.add_argument(
+    "-shuffle", action='store_true', help='Shuffling or Curriculum Learning')
 parser.add_argument("-trans", action='store_true')
 parser.add_argument("-feat_only", action='store_true')
 parser.add_argument("-same_protein", action='store_true')
@@ -193,12 +194,20 @@ def copy_checkpoint(source, target='best_checkpoint'):
 
 if args.shuffle:
   deterministic = False
+  shuffle_batches = False
 else:
   # samples sorted by pK in PDBbind data set.
+  # each batch has samples with similar pK.
   # curriculum learning https://doi.org/10.1145/1553374.1553380
   deterministic = True
+  shuffle_batches = True
+
 for i in range(args.max_epoch):
-  model.fit(train_dataset, nb_epoch=1, deterministic=deterministic)
+  model.fit(
+      train_dataset,
+      nb_epoch=1,
+      deterministic=deterministic,
+      shuffle_batches=shuffle_batches)
 
   print("Evaluating model at {} epoch".format(i + 1))
   valid_scores = valid_evaluator.compute_model_performance(metrics)
