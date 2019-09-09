@@ -935,7 +935,11 @@ def load_pdbbind(reload=True,
             "%s subsets not supported for version %s" % (subset, version))
 
     elif version == "2018":
-      if subset == "refined":
+      if subset == "core":
+        # from CASF-2016
+        index_labels_file = os.path.join(data_folder, "index",
+                                         "INDEX_core_data.2016")
+      elif subset == "refined":
         index_labels_file = os.path.join(data_folder, "index",
                                          "INDEX_refined_data.2018")
       elif subset == "general_PL":

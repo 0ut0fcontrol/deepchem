@@ -10,6 +10,7 @@ __copyright__ = "Copyright 2016, Stanford University"
 __license__ = "MIT"
 
 import json
+import shutil
 import argparse
 import random
 import numpy as np
@@ -23,8 +24,9 @@ parser.add_argument("-patience", type=int, default=5)
 parser.add_argument("-version", default='2015')
 parser.add_argument("-subset", default='core')
 parser.add_argument(
-    "-test",
-    help="test set, e.g. core. split test set from subset if not given.")
+    "-test_core",
+    help=("use core set as test set, 2015 or 2018"
+          "split test set from subset if not given."))
 parser.add_argument("-component", default='binding')
 parser.add_argument("-split", default=None)
 parser.add_argument("-seed", type=int, default=111)
@@ -56,8 +58,9 @@ frag2_num_atoms = 1350  # for pocket atoms with Hs
 # frag2_num_atoms = 24000  # for protein atoms
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
-if args.clust_file or args.test:
+if args.clust_file or args.test_core:
   args.split = None
+
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     reload=args.reload,
     featurizer="atomic",
@@ -79,11 +82,11 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     transform=args.trans,
 )
 
-if args.test is not None:
+if args.test_core is not None:
   pdbbind_tasks, (test_dataset, _, _), transformers = dc.molnet.load_pdbbind(
       reload=args.reload,
       featurizer="atomic",
-      version='2015',
+      version=args.test_core,
       frag1_num_atoms=frag1_num_atoms,
       frag2_num_atoms=frag2_num_atoms,
       split=None,
@@ -109,7 +112,7 @@ else:
   dataset, _, _ = pdbbind_datasets
   dataset_ids = dataset.ids
   dataset_ids = dataset_ids.tolist()
-  if args.test is None:
+  if args.test_core is None:
     test_ids = set([])
   else:
     test_ids = set(test_dataset.ids)
@@ -151,7 +154,7 @@ else:
   print(f"keep {len(keep_inds)}/{len(dataset_ids)} in dataset")
 
   N = len(keep_inds)
-  if args.test is None:
+  if args.test_core is None:
     N_train = int(0.8 * N)
     N_test = int(0.1 * N)
     train_inds = keep_inds[:N_train]
@@ -303,9 +306,10 @@ with open('splitted_ids.json', 'w') as f:
   }
   json.dump(data, f, indent=2)
 
-if args.test is not None:
-  import shutil
+if args.split is None:
   shutil.rmtree(train_dataset.data_dir)
   shutil.rmtree(valid_dataset.data_dir)
+  if args.test_core is None:
+    shutil.rmtree(test_dataset.data_dir)
 
 print(f"Elapsed time {dt.now()- start}")
