@@ -20,7 +20,7 @@ from datetime import datetime as dt
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-max_epoch", type=int, default=100)
-parser.add_argument("-patience", type=int, default=5)
+parser.add_argument("-patience", type=int, default=3)
 parser.add_argument("-version", default='2015')
 parser.add_argument("-subset", default='core')
 parser.add_argument(
@@ -58,8 +58,9 @@ frag2_num_atoms = 1350  # for pocket atoms with Hs
 # frag2_num_atoms = 24000  # for protein atoms
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
+split = args.split # args.split keep the name of splitting method.
 if args.clust_file or args.test_core:
-  args.split = None
+  split = None
 
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     reload=args.reload,
@@ -68,7 +69,7 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     frag1_num_atoms=frag1_num_atoms,
     frag2_num_atoms=frag2_num_atoms,
     shard_size=1024,
-    split=args.split,
+    split=split,
     split_seed=args.seed,
     clust_file=args.clust_file,
     split_complex=args.split_complex,
@@ -106,7 +107,7 @@ if args.test_core is not None:
 if args.feat_only:
   raise SystemExit(0)
 
-if args.split is not None:
+if split is not None:
   train_dataset, valid_dataset, test_dataset = pdbbind_datasets
 else:
   dataset, _, _ = pdbbind_datasets
@@ -129,10 +130,7 @@ else:
   else:
     with open(args.clust_file) as f:
       clusters = json.load(f)
-      max(clusters, key=len)
-    print(
-        f"biggest cluster: {len(max(clusters, key=len))}, total samples: {len(sum(clusters,[]))}"
-    )
+
     clusters_inds = []
     for clust in clusters:
       if all([(id_ not in test_ids) for id_ in clust]):
@@ -149,12 +147,13 @@ else:
     # make test set different with different random seeds.
     random.shuffle(clusters_inds)
     keep_inds = sum(clusters_inds, [])
+    print(f"biggest cluster: {len(max(clusters_inds, key=len))}, total samples: {len(keep_inds)}")
 
   keep_inds = np.array(keep_inds)
   print(f"keep {len(keep_inds)}/{len(dataset_ids)} in dataset")
 
-  N = len(keep_inds)
   if args.test_core is None:
+    N = len(keep_inds)
     N_train = int(0.8 * N)
     N_test = int(0.1 * N)
     train_inds = keep_inds[:N_train]
@@ -167,6 +166,23 @@ else:
     valid_dataset = dataset.select(valid_inds)
     test_dataset = dataset.select(test_inds)
   else:
+    if args.test_core == '2015':
+      if args.version == '2015':
+        if args.subset == 'refined': max_N = 2048
+        if args.subset == 'general_PL': max_N = 8076
+      if args.version == '2018':
+        if args.subset == 'refined': max_N = 2648
+        if args.subset == 'general_PL': max_N = 11687
+    if args.test_core == '2018':
+      if args.version == '2015':
+        if args.subset == 'refined': max_N = 2130
+        if args.subset == 'general_PL': max_N = 8110
+      if args.version == '2018':
+        if args.subset == 'refined': max_N = 2663
+        if args.subset == 'general_PL': max_N = 11561
+    print("choice {max_N} samples to be train and valid set.")
+    keep_inds = np.random.choice(keep_inds, max_N, replace=False)
+    N = len(keep_inds)
     N_train = int(0.9 * N)
     train_inds = keep_inds[:N_train]
     valid_inds = keep_inds[N_train:]
@@ -306,7 +322,7 @@ with open('splitted_ids.json', 'w') as f:
   }
   json.dump(data, f, indent=2)
 
-if args.split is None:
+if split is None:
   shutil.rmtree(train_dataset.data_dir)
   shutil.rmtree(valid_dataset.data_dir)
   if args.test_core is None:
