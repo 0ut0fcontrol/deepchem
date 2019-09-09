@@ -11,6 +11,7 @@ __license__ = "MIT"
 
 import json
 import argparse
+import random
 import numpy as np
 import tensorflow as tf
 import deepchem as dc
@@ -24,9 +25,8 @@ parser.add_argument("-subset", default='core')
 parser.add_argument(
     "-test",
     help="test set, e.g. core. split test set from subset if not given.")
-parser.add_argument("-remove_ids", help="ids need to remove from training set")
 parser.add_argument("-component", default='binding')
-parser.add_argument("-split", default='random')
+parser.add_argument("-split", default=None)
 parser.add_argument("-seed", type=int, default=111)
 parser.add_argument("-batch_size", type=int, default=16)
 parser.add_argument("-clust_file")
@@ -56,29 +56,8 @@ frag2_num_atoms = 1350  # for pocket atoms with Hs
 # frag2_num_atoms = 24000  # for protein atoms
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
-if args.test is not None:
+if args.clust_file or args.test:
   args.split = None
-  pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
-      reload=args.reload,
-      featurizer="atomic",
-      version='2015',
-      frag1_num_atoms=frag1_num_atoms,
-      frag2_num_atoms=frag2_num_atoms,
-      split=args.split,
-      split_seed=args.seed,
-      clust_file=args.clust_file,
-      split_complex=args.split_complex,
-      same_protein=args.same_protein,
-      same_ligand=args.same_ligand,
-      subset='core',
-      load_binding_pocket=True,
-      data_dir=args.data_dir,
-      save_dir=args.save_dir,
-      save_timestamp=args.timestamp,
-      transform=args.trans,
-  )
-  test_dataset, _, _ = pdbbind_datasets
-
 pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     reload=args.reload,
     featurizer="atomic",
@@ -100,31 +79,96 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     transform=args.trans,
 )
 
+if args.test is not None:
+  pdbbind_tasks, (test_dataset, _, _), transformers = dc.molnet.load_pdbbind(
+      reload=args.reload,
+      featurizer="atomic",
+      version='2015',
+      frag1_num_atoms=frag1_num_atoms,
+      frag2_num_atoms=frag2_num_atoms,
+      split=None,
+      split_seed=args.seed,
+      clust_file=args.clust_file,
+      split_complex=args.split_complex,
+      same_protein=args.same_protein,
+      same_ligand=args.same_ligand,
+      subset='core',
+      load_binding_pocket=True,
+      data_dir=args.data_dir,
+      save_dir=args.save_dir,
+      save_timestamp=args.timestamp,
+      transform=args.trans,
+  )
+
 if args.feat_only:
   raise SystemExit(0)
 
-if args.test is not None:
-  dataset, _, _ = pdbbind_datasets
-  test_ids = set(test_dataset.ids)
-  keep_inds = []
-  dataset_ids = dataset.ids
-  for i, id_ in enumerate(dataset_ids):
-    if id_ in test_ids:
-      continue
-    else:
-      keep_inds.append(i)
-  print(f"keep {len(keep_inds)}/{len(dataset_ids)} in dataset")
-  N = len(keep_inds)
-  N_train = int(N * 0.9)
-  np.random.seed(args.seed)
-  perm = np.random.permutation(N)
-  keep_inds = np.array(keep_inds)[perm]
-  train_inds = sorted(keep_inds[:N_train])
-  valid_inds = sorted(keep_inds[N_train:])
-  train_dataset = dataset.select(train_inds)
-  valid_dataset = dataset.select(valid_inds)
-else:
+if args.split is not None:
   train_dataset, valid_dataset, test_dataset = pdbbind_datasets
+else:
+  dataset, _, _ = pdbbind_datasets
+  dataset_ids = dataset.ids
+  dataset_ids = dataset_ids.tolist()
+  if args.test is None:
+    test_ids = set([])
+  else:
+    test_ids = set(test_dataset.ids)
+
+  keep_inds = []
+  if args.clust_file is None:
+    for i, id_ in enumerate(dataset_ids):
+      if id_ in test_ids:
+        continue
+      else:
+        keep_inds.append(i)
+    random.shuffle(keep_inds)
+    # print(keep_inds)
+  else:
+    with open(args.clust_file) as f:
+      clusters = json.load(f)
+      max(clusters, key=len)
+    print(
+        f"biggest cluster: {len(max(clusters, key=len))}, total samples: {len(sum(clusters,[]))}"
+    )
+    clusters_inds = []
+    for clust in clusters:
+      if all([(id_ not in test_ids) for id_ in clust]):
+        clust_inds = []
+        for id_ in clust:
+          try:
+            idx = dataset_ids.index(id_)
+            clust_inds.append(idx)
+          except ValueError:
+            continue
+        if clust_inds:
+          clusters_inds.append(clust_inds)
+    # shuffle clusters.
+    # make test set different with different random seeds.
+    random.shuffle(clusters_inds)
+    keep_inds = sum(clusters_inds, [])
+
+  keep_inds = np.array(keep_inds)
+  print(f"keep {len(keep_inds)}/{len(dataset_ids)} in dataset")
+
+  N = len(keep_inds)
+  if args.test is None:
+    N_train = int(0.8 * N)
+    N_test = int(0.1 * N)
+    train_inds = keep_inds[:N_train]
+    valid_inds = keep_inds[N_train:-N_test]
+    test_inds = keep_inds[-N_test:]
+    # indices will be sorted in dataset.select()
+    # so training set will keep the order from PDBbind INDEX.
+    # we use INDEX_*_data for samples sorted by pK.
+    train_dataset = dataset.select(train_inds)
+    valid_dataset = dataset.select(valid_inds)
+    test_dataset = dataset.select(test_inds)
+  else:
+    N_train = int(0.9 * N)
+    train_inds = keep_inds[:N_train]
+    valid_inds = keep_inds[N_train:]
+    train_dataset = dataset.select(train_inds)
+    valid_dataset = dataset.select(valid_inds)
 
 # transformers = [
 #     dc.trans.NormalizationTransformer(transform_y=True, dataset=train_dataset)
