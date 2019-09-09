@@ -77,6 +77,8 @@ def uclust2clust(filename):
   codes = []
   with open(filename) as f:
     for line in f:
+      if line[0] == "C":
+        continue
       fields = line.split()
       cluster_mask.append(int(fields[1]))
       codes.append(fields[8])
