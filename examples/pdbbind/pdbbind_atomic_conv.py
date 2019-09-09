@@ -51,8 +51,8 @@ np.random.seed(args.seed)
 tf.set_random_seed(args.seed)
 
 frag1_num_atoms = 368  # for ligand atoms with Hs.
-frag2_num_atoms = 1067  # for pocket atoms without Hs
-# frag2_num_atoms = 1350  # for pocket atoms with Hs
+frag2_num_atoms = 1350  # for pocket atoms with Hs
+# frag2_num_atoms = 1067  # for pocket atoms without Hs
 # frag2_num_atoms = 24000  # for protein atoms
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 

@@ -362,9 +362,9 @@ class SimpleComplexNeighborListFragmentAtomicCoordinates(ComplexFeaturizer):
           protein_pdb_file,
           add_hydrogens=False,
           calc_charges=False,
-          remove_hydrogens=True,
+          remove_hydrogens=False,
           sanitize=False,
-          robust_sanitize=True, # delete can not sanitize atoms.
+          robust_sanitize=False, # When True, delete can not sanitize atoms.
       )
     except MoleculeLoadException:
       # Currently handles loading failures by returning None
