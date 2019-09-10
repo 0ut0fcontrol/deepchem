@@ -37,6 +37,7 @@ parser.add_argument("-data_dir")
 parser.add_argument("-reload", action='store_true')
 parser.add_argument(
     "-shuffle", action='store_true', help='Shuffling or Curriculum Learning')
+parser.add_argument("-shuf_labels", action='store_true')
 parser.add_argument("-trans", action='store_true')
 parser.add_argument("-feat_only", action='store_true')
 parser.add_argument("-same_protein", action='store_true')
@@ -58,7 +59,7 @@ frag2_num_atoms = 1350  # for pocket atoms with Hs
 # frag2_num_atoms = 24000  # for protein atoms
 complex_num_atoms = frag1_num_atoms + frag2_num_atoms
 
-split = args.split # args.split keep the name of splitting method.
+split = args.split  # args.split keep the name of splitting method.
 if args.clust_file or args.test_core:
   split = None
 
@@ -72,6 +73,7 @@ pdbbind_tasks, pdbbind_datasets, transformers = dc.molnet.load_pdbbind(
     split=split,
     split_seed=args.seed,
     clust_file=args.clust_file,
+    shuf_labels=args.shuf_labels,
     split_complex=args.split_complex,
     same_protein=args.same_protein,
     same_ligand=args.same_ligand,
@@ -147,7 +149,9 @@ else:
     # make test set different with different random seeds.
     random.shuffle(clusters_inds)
     keep_inds = sum(clusters_inds, [])
-    print(f"biggest cluster: {len(max(clusters_inds, key=len))}, total samples: {len(keep_inds)}")
+    print(
+        f"biggest cluster: {len(max(clusters_inds, key=len))}, total samples: {len(keep_inds)}"
+    )
 
   keep_inds = np.array(keep_inds)
   print(f"keep {len(keep_inds)}/{len(dataset_ids)} in dataset")

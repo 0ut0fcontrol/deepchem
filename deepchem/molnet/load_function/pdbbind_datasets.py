@@ -815,6 +815,7 @@ def load_pdbbind(reload=True,
                  split_complex=False,
                  split_seed=None,
                  clust_file=None,
+                 shuf_labels=False,
                  reweight=True,
                  save_dir=None,
                  transform=False,
@@ -1058,6 +1059,13 @@ def load_pdbbind(reload=True,
         % time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
         "\"%s\"\n" % data_folder)
     feat_t1 = time.time()
+    if shuf_labels:
+      labels = np.random.permutation(labels)
+    sort_inds = np.argsort(labels)
+    ligand_files = np.array(ligand_files)[sort_inds]
+    protein_files = np.array(protein_files)[sort_inds]
+    labels = labels[sort_inds]
+    pdbs = np.array(pdbs)[sort_inds]
     zipped = list(zip(ligand_files, protein_files, labels, pdbs))
     dataset = deepchem.data.DiskDataset.create_dataset(
         shard_generator(zipped, shard_size),
