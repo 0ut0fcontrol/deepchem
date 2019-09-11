@@ -148,6 +148,8 @@ else:
     # shuffle clusters.
     # make test set different with different random seeds.
     random.shuffle(clusters_inds)
+    # assign smaller clusters (and singletons) into test set.
+    clusters_inds.sort(key=len, reverse=True)
     keep_inds = sum(clusters_inds, [])
     print(
         f"biggest cluster: {len(max(clusters_inds, key=len))}, total samples: {len(keep_inds)}"
@@ -163,6 +165,14 @@ else:
     train_inds = keep_inds[:N_train]
     valid_inds = keep_inds[N_train:-N_test]
     test_inds = keep_inds[-N_test:]
+
+    # Shuffling train and valid will slightly affect the performance on test set.
+    # Traning will not be stopped too early but may overfitting.
+    # train_valid = keep_inds[:-N_test]
+    # train_valid = np.random.permutation(train_valid)
+    # train_inds = train_valid[:N_train]
+    # valid_inds = train_valid[N_train:]
+
     # indices will be sorted in dataset.select()
     # so training set will keep the order from PDBbind INDEX.
     # we use INDEX_*_data for samples sorted by pK.
@@ -186,8 +196,8 @@ else:
         if args.subset == 'general_PL': max_N = 11561
     print("choice {max_N} samples to be train and valid set.")
     keep_inds = np.random.choice(keep_inds, max_N, replace=False)
-    N = len(keep_inds)
-    N_train = int(0.9 * N)
+    # keep_inds = keep_inds[:max_N] # no difference on performance on test set
+    N_train = int(0.9 * max_N)
     train_inds = keep_inds[:N_train]
     valid_inds = keep_inds[N_train:]
     train_dataset = dataset.select(train_inds)
