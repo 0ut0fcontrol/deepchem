@@ -106,9 +106,6 @@ if args.test_core is not None:
       transform=args.trans,
   )
 
-if args.feat_only:
-  raise SystemExit(0)
-
 if split is not None:
   train_dataset, valid_dataset, test_dataset = pdbbind_datasets
 else:
@@ -181,20 +178,24 @@ else:
     test_dataset = dataset.select(test_inds)
   else:
     if args.test_core == '2015':
+      # protein simi 0.4
+      # scaffold simi 0.8
       if args.version == '2015':
-        if args.subset == 'refined': max_N = 2048
-        if args.subset == 'general_PL': max_N = 8076
+        if args.subset == 'refined': max_N = 2036
+        if args.subset == 'general_PL': max_N = 7792
       if args.version == '2018':
-        if args.subset == 'refined': max_N = 2648
-        if args.subset == 'general_PL': max_N = 11687
+        if args.subset == 'refined': max_N = 2637
+        if args.subset == 'general_PL': max_N = 11649
     if args.test_core == '2018':
+      # protein simi 0.5
+      # fingerprint simi 0.5
       if args.version == '2015':
         if args.subset == 'refined': max_N = 2130
         if args.subset == 'general_PL': max_N = 8110
       if args.version == '2018':
         if args.subset == 'refined': max_N = 2663
         if args.subset == 'general_PL': max_N = 11561
-    print("choice {max_N} samples to be train and valid set.")
+    print(f"choice {max_N} samples to be train and valid set.")
     keep_inds = np.random.choice(keep_inds, max_N, replace=False)
     # keep_inds = keep_inds[:max_N] # no difference on performance on test set
     N_train = int(0.9 * max_N)
@@ -203,6 +204,8 @@ else:
     train_dataset = dataset.select(train_inds)
     valid_dataset = dataset.select(valid_inds)
 
+if args.feat_only:
+  raise SystemExit(0)
 # transformers = [
 #     dc.trans.NormalizationTransformer(transform_y=True, dataset=train_dataset)
 # ]
