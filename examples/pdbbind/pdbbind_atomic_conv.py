@@ -27,6 +27,7 @@ parser.add_argument(
     "-test_core",
     help=("use core set as test set, 2015 or 2018"
           "split test set from subset if not given."))
+parser.add_argument("-test_kinome", action="store_true")
 parser.add_argument("-component", default='binding')
 parser.add_argument("-split", default=None)
 parser.add_argument("-seed", type=int, default=111)
@@ -204,6 +205,17 @@ else:
     train_dataset = dataset.select(train_inds)
     valid_dataset = dataset.select(valid_inds)
 
+if args.test_kinome:
+  # tasks, datasets, transformers
+  _, (kinome_dataset, _, _), _ = dc.molnet.load_kinome(
+      data_dir=args.data_dir,
+      save_dir=args.save_dir,
+      frag1_num_atoms=frag1_num_atoms,
+      frag2_num_atoms=frag2_num_atoms,
+      load_binding_pocket=True,
+      split=None,
+  )
+
 if args.feat_only:
   raise SystemExit(0)
 # transformers = [
@@ -257,6 +269,10 @@ valid_evaluator = dc.utils.evaluate.Evaluator(model, valid_dataset,
                                               transformers)
 test_evaluator = dc.utils.evaluate.Evaluator(model, test_dataset, transformers)
 
+if args.test_kinome:
+  kinome_evaluator = dc.utils.evaluate.Evaluator(model, kinome_dataset,
+                                                 transformers)
+
 
 def copy_checkpoint(source, target='best_checkpoint'):
   import os
@@ -308,6 +324,10 @@ for i in range(args.max_epoch):
     test_scores = test_evaluator.compute_model_performance(metrics)
     print("Testing scores")
     print(test_scores)
+    if args.test_kinome:
+      kinome_scores = kinome_evaluator.compute_model_performance(metrics)
+      print("Kinome scores")
+      print(kinome_scores)
     print(flush=True)
 
 model.restore(checkpoint=best_checkpoint)
@@ -323,6 +343,10 @@ best_scores = {
     'valid': valid_scores,
     'test': test_scores
 }
+if args.test_kinome:
+  kinome_scores = kinome_evaluator.compute_model_performance(
+      metrics, csv_out="kinome.csv")
+  best_scores['kinome'] = kinome_scores
 print('peformances of model best on validation dataset:')
 print(json.dumps(best_scores, indent=2))
 

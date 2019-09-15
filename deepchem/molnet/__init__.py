@@ -31,6 +31,7 @@ from deepchem.molnet.load_function.uspto_datasets import load_uspto
 from deepchem.molnet.load_function.uv_datasets import load_uv
 from deepchem.molnet.load_function.factors_datasets import load_factors
 from deepchem.molnet.load_function.kinase_datasets import load_kinase
+from deepchem.molnet.load_function.kinome_datasets import load_kinome
 
 from deepchem.molnet.dnasim import simulate_motif_density_localization
 from deepchem.molnet.dnasim import simulate_motif_counting
