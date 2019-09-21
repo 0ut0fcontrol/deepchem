@@ -966,7 +966,7 @@ def load_pdbbind(reload=True,
     if same_protein:
       protein_files = [protein_files[0] for i in protein_files]
     ligand_files = [
-        os.path.join(data_folder, pdb, "%s_ligand.sdf" % pdb) for pdb in pdbs
+        os.path.join(data_folder, pdb, "%s_ligand.pdb" % pdb) for pdb in pdbs
     ]
     if same_ligand:
       ligand_files = [ligand_files[0] for i in ligand_files]

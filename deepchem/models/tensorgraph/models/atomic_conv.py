@@ -56,7 +56,7 @@ def InitializeWeightsBiases(prev_layer_size,
 
 
 class AtomicConvScore(Layer):
-
+  atomic_outputs = None
   def __init__(self, atom_types, layer_sizes, component, **kwargs):
     self.atom_types = atom_types
     self.layer_sizes = layer_sizes
@@ -151,12 +151,15 @@ class AtomicConvScore(Layer):
     complex_energy = tf.reduce_sum(complex_outputs, 1)
     if self.component == 'binding':
       target_energy = complex_energy - (frag1_energy + frag2_energy)
+      self.atomic_outputs = [frag1_outputs, frag2_outputs, complex_outputs]
     elif self.component == 'complex':
       target_energy = complex_energy
     elif self.component == 'ligand':
       target_energy = complex_energy - frag1_energy
+      self.atomic_outputs = [frag1_outputs, frag1_outputs, complex_outputs]
     elif self.component == 'protein':
       target_energy = complex_energy - frag2_energy
+      self.atomic_outputs = [frag2_outputs, frag2_outputs, complex_outputs]
     else:
       raise ValueError('Unkown component {}'.format(self.component))
     self.out_tensor = tf.expand_dims(target_energy, axis=1)
@@ -272,6 +275,7 @@ class AtomicConvModel(TensorGraph):
             self.complex_z
         ],
     )
+    self.atomic_conv = score
     # score = Dense(1, in_layers=[score])
     self.label = Label(shape=(None, 1))
     loss = ReduceMean(in_layers=L2Loss(in_layers=[score, self.label]))
@@ -444,6 +448,13 @@ class AtomicConvModel(TensorGraph):
     -------
     results: numpy ndarray or list of numpy ndarrays
     """
+    generator = self.default_generator(dataset, predict=True, pad_batches=True)
+    y_pred = self.predict_on_generator(generator, transformers, outputs)
+    return y_pred[:len(dataset)]
+
+  def predict_atomic(self, dataset):
+    transformers = []
+    outputs = self.atomic_conv.atomic_outputs
     generator = self.default_generator(dataset, predict=True, pad_batches=True)
     y_pred = self.predict_on_generator(generator, transformers, outputs)
     return y_pred[:len(dataset)]

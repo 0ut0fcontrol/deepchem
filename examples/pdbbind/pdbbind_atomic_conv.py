@@ -17,6 +17,7 @@ import numpy as np
 import tensorflow as tf
 import deepchem as dc
 from datetime import datetime as dt
+from rdkit import Chem
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("-max_epoch", type=int, default=100)
@@ -362,6 +363,44 @@ with open('splitted_ids.json', 'w') as f:
       'test': list(test_dataset.ids)
   }
   json.dump(data, f, indent=2)
+
+
+def set_occupancy(mol, occupancy):
+  for atom, occ in zip(mol.GetAtoms(), occupancy):
+    info = atom.GetPDBResidueInfo()
+    info.SetOccupancy(float(occ))
+
+
+atomic = model.predict_atomic(test_dataset)
+lig_atomic, pro_atomic, com_atomic = atomic
+ids = test_dataset.ids
+mols = []
+for i, x in enumerate(test_dataset.X):
+  lig_x, pro_x, com_x = x
+  lig_m, lig_c, lig_n, lig_z = lig_x
+  pro_m, pro_c, pro_n, pro_z = pro_x
+  com_m, com_c, com_n, com_z = com_x
+  if args.component == 'ligand':
+    atomic_energies = com_atomic[i] - lig_atomic[i]
+    atomic_energies = atomic_energies[lig_z != 0]
+    m = lig_m
+    name = f'atom.{ids[i]}_ligand.pdb'
+  if args.component == 'protein':
+    atomic_energies = com_atomic[i] - pro_atomic[i]
+    atomic_energies = atomic_energies[pro_z != 0]
+    set_occupancy(pro_m, atomic_energies)
+    m = pro_m
+    name = f'atom.{ids[i]}_pocket.pdb'
+  if args.component == 'binding':
+    lig_energies = lig_atomic[i][lig_z != 0]
+    pro_energies = pro_atomic[i][pro_z != 0]
+    com_energies = com_atomic[i][com_z != 0]
+    assert len(lig_energies) + len(pro_energies) == len(com_energies)
+    atomic_energies = com_energies - np.hstack((lig_energies, pro_energies))
+    m = com_m
+    name = f'atom.{ids[i]}_complex.pdb'
+  set_occupancy(m, atomic_energies)
+  Chem.MolToPDBFile(m, name)
 
 if split is None:
   shutil.rmtree(train_dataset.data_dir)
